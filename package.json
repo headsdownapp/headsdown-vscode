@@ -1,0 +1,166 @@
+{
+  "name": "headsdown-vscode",
+  "displayName": "HeadsDown",
+  "description": "Focus mode awareness for VS Code. Shows your availability status, protects deep work, and gives AI agents awareness of your focus mode.",
+  "version": "0.1.0",
+  "publisher": "headsdown",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": ["Other"],
+  "keywords": [
+    "headsdown",
+    "focus",
+    "availability",
+    "status",
+    "deep-work",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/headsdownapp/headsdown-vscode.git"
+  },
+  "homepage": "https://github.com/headsdownapp/headsdown-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/headsdownapp/headsdown-vscode/issues"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "headsdown.signIn",
+        "title": "HeadsDown: Sign In"
+      },
+      {
+        "command": "headsdown.signOut",
+        "title": "HeadsDown: Sign Out"
+      },
+      {
+        "command": "headsdown.quickAction",
+        "title": "HeadsDown: Quick Actions"
+      },
+      {
+        "command": "headsdown.showOutput",
+        "title": "HeadsDown: Show Logs"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "headsdown.quickAction",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h"
+      }
+    ],
+    "configuration": {
+      "title": "HeadsDown",
+      "properties": {
+        "headsdown.trustLevel": {
+          "type": "string",
+          "enum": ["advisory", "active", "guarded"],
+          "default": "advisory",
+          "enumDescriptions": [
+            "Warnings only. The agent sees your status but is never blocked.",
+            "Auto-approves writes with an approved proposal. Blocks when locked or offline without proposal.",
+            "Requires an approved proposal for writes in busy, limited, or offline modes."
+          ],
+          "description": "How aggressively HeadsDown gates AI agent file writes."
+        },
+        "headsdown.sensitivePaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional glob patterns for files that always require confirmation."
+        },
+        "headsdown.notifications.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show HeadsDown notifications for expiring focus blocks and deferred verdicts."
+        },
+        "headsdown.notifications.expiryWarningMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Minutes before focus block expiry to show a warning."
+        },
+        "headsdown.statusBar.showTimeRemaining": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show countdown timer in status bar during timed focus blocks."
+        },
+        "headsdown.polling.intervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 60,
+          "maximum": 900,
+          "description": "How often to poll the API for external status changes (seconds)."
+        },
+        "headsdown.autoDetect.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect sustained coding and offer to set your status."
+        },
+        "headsdown.autoDetect.thresholdMinutes": {
+          "type": "number",
+          "default": 20,
+          "minimum": 10,
+          "maximum": 60,
+          "description": "Minutes of sustained coding activity before prompting."
+        },
+        "headsdown.api.baseUrl": {
+          "type": "string",
+          "default": "https://headsdown.app",
+          "description": "HeadsDown API base URL. Only change for self-hosted or development."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "headsdown.onlineColor",
+        "description": "Status bar color when user is online",
+        "defaults": { "dark": "#4ade80", "light": "#16a34a", "highContrast": "#4ade80", "highContrastLight": "#16a34a" }
+      },
+      {
+        "id": "headsdown.busyColor",
+        "description": "Status bar color when user is in focus mode (busy)",
+        "defaults": { "dark": "#fbbf24", "light": "#d97706", "highContrast": "#fbbf24", "highContrastLight": "#d97706" }
+      },
+      {
+        "id": "headsdown.limitedColor",
+        "description": "Status bar color when user has limited availability",
+        "defaults": { "dark": "#fb923c", "light": "#ea580c", "highContrast": "#fb923c", "highContrastLight": "#ea580c" }
+      },
+      {
+        "id": "headsdown.offlineColor",
+        "description": "Status bar color when user is offline",
+        "defaults": { "dark": "#94a3b8", "light": "#64748b", "highContrast": "#94a3b8", "highContrastLight": "#64748b" }
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:integration": "vscode-test",
+    "lint": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
+    "format": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@headsdown/sdk": "git+https://github.com/headsdownapp/headsdown-sdk.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.110.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.28.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
