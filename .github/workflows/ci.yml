@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, hetzner]
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
