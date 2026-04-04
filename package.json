@@ -9,7 +9,9 @@
     "vscode": "^1.95.0",
     "node": ">=20.0.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "keywords": [
     "headsdown",
     "focus",
@@ -27,7 +29,9 @@
     "url": "https://github.com/headsdownapp/headsdown-vscode/issues"
   },
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
@@ -59,7 +63,11 @@
       "properties": {
         "headsdown.trustLevel": {
           "type": "string",
-          "enum": ["advisory", "active", "guarded"],
+          "enum": [
+            "advisory",
+            "active",
+            "guarded"
+          ],
           "default": "advisory",
           "enumDescriptions": [
             "Warnings only. The agent sees your status but is never blocked.",
@@ -70,7 +78,9 @@
         },
         "headsdown.sensitivePaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Additional glob patterns for files that always require confirmation."
         },
@@ -114,6 +124,11 @@
           "type": "string",
           "default": "https://headsdown.app",
           "description": "HeadsDown API base URL. Only change for self-hosted or development."
+        },
+        "headsdown.calibration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable calibration reporting. When enabled, HeadsDown learns from your agent's task outcomes to improve verdict accuracy. No code content is collected."
         }
       }
     },
@@ -121,22 +136,42 @@
       {
         "id": "headsdown.onlineColor",
         "description": "Status bar color when user is online",
-        "defaults": { "dark": "#4ade80", "light": "#16a34a", "highContrast": "#4ade80", "highContrastLight": "#16a34a" }
+        "defaults": {
+          "dark": "#4ade80",
+          "light": "#16a34a",
+          "highContrast": "#4ade80",
+          "highContrastLight": "#16a34a"
+        }
       },
       {
         "id": "headsdown.busyColor",
         "description": "Status bar color when user is in focus mode (busy)",
-        "defaults": { "dark": "#fbbf24", "light": "#d97706", "highContrast": "#fbbf24", "highContrastLight": "#d97706" }
+        "defaults": {
+          "dark": "#fbbf24",
+          "light": "#d97706",
+          "highContrast": "#fbbf24",
+          "highContrastLight": "#d97706"
+        }
       },
       {
         "id": "headsdown.limitedColor",
         "description": "Status bar color when user has limited availability",
-        "defaults": { "dark": "#fb923c", "light": "#ea580c", "highContrast": "#fb923c", "highContrastLight": "#ea580c" }
+        "defaults": {
+          "dark": "#fb923c",
+          "light": "#ea580c",
+          "highContrast": "#fb923c",
+          "highContrastLight": "#ea580c"
+        }
       },
       {
         "id": "headsdown.offlineColor",
         "description": "Status bar color when user is offline",
-        "defaults": { "dark": "#94a3b8", "light": "#64748b", "highContrast": "#94a3b8", "highContrastLight": "#64748b" }
+        "defaults": {
+          "dark": "#94a3b8",
+          "light": "#64748b",
+          "highContrast": "#94a3b8",
+          "highContrastLight": "#64748b"
+        }
       }
     ]
   },
@@ -152,7 +187,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@headsdown/sdk": "git+https://github.com/headsdownapp/headsdown-sdk.git"
+    "@headsdown/sdk": "github:headsdownapp/headsdown-sdk"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

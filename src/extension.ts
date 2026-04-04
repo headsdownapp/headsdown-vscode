@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { ConfigStore } from "@headsdown/sdk";
 import { OutputLogger } from "./output.js";
 import { AuthManager } from "./auth.js";
 import { StatusBarManager } from "./status-bar.js";
@@ -64,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("headsdown")) {
         settingsManager.invalidateCache();
-        onSettingsChanged();
+        void onSettingsChanged();
       }
     }),
   );
@@ -153,7 +154,20 @@ function capitalize(s: string): string {
 
 // === Settings changes ===
 
-function onSettingsChanged(): void {
+async function onSettingsChanged(): Promise<void> {
+  // Sync calibration setting to SDK config
+  try {
+    const configStore = new ConfigStore();
+    const config = await configStore.load();
+    const calibration = settingsManager.get("calibration");
+    if (config.calibration !== calibration) {
+      await configStore.save({ ...config, calibration });
+      logger.log(`Calibration ${calibration ? "enabled" : "disabled"}`);
+    }
+  } catch {
+    // Non-critical
+  }
+
   if (authManager.isAuthenticated()) {
     const client = authManager.getClient();
     if (client) {
@@ -161,7 +175,7 @@ function onSettingsChanged(): void {
       const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
       statusBar.startPolling(client, intervalMs);
     }
-    refreshAuthenticatedState();
+    await refreshAuthenticatedState();
   }
 }
 

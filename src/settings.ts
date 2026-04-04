@@ -17,6 +17,7 @@ export interface HeadsDownSettings {
   autoDetectEnabled: boolean;
   autoDetectThresholdMinutes: number;
   apiBaseUrl: string;
+  calibration: boolean;
 }
 
 const VALID_TRUST_LEVELS: TrustLevel[] = ["advisory", "active", "guarded"];
@@ -31,6 +32,7 @@ const DEFAULTS: HeadsDownSettings = {
   autoDetectEnabled: true,
   autoDetectThresholdMinutes: 20,
   apiBaseUrl: "https://headsdown.app",
+  calibration: true,
 };
 
 /**
@@ -103,6 +105,13 @@ export class SettingsManager {
         "baseUrl",
         DEFAULTS.apiBaseUrl,
       ),
+      calibration: this.resolve<boolean>(
+        config,
+        "calibration",
+        shared,
+        "calibration",
+        DEFAULTS.calibration,
+      ),
     };
   }
 
@@ -126,6 +135,7 @@ export class SettingsManager {
       autoDetectEnabled: "autoDetect.enabled",
       autoDetectThresholdMinutes: "autoDetect.thresholdMinutes",
       apiBaseUrl: "api.baseUrl",
+      calibration: "calibration",
     };
 
     const SHARED_KEY_MAP: Record<keyof HeadsDownSettings, string> = {
@@ -138,6 +148,7 @@ export class SettingsManager {
       autoDetectEnabled: "autoDetectEnabled",
       autoDetectThresholdMinutes: "autoDetectThresholdMinutes",
       apiBaseUrl: "baseUrl",
+      calibration: "calibration",
     };
 
     if (key === "trustLevel") {
