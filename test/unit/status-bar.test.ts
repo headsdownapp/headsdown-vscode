@@ -224,6 +224,7 @@ describe("StatusBarManager", () => {
       expect(tooltip.value).toContain("$(lock)");
       expect(tooltip.value).toContain("Deep work on auth refactor");
       expect(tooltip.value).toContain("47 minutes remaining");
+      expect(tooltip.value).toContain("Sync: Connecting");
       expect(tooltip.value).toContain("Trust level: advisory");
     });
 
@@ -255,6 +256,20 @@ describe("StatusBarManager", () => {
       const tooltip = item.tooltip as MarkdownString;
       expect(tooltip.value).toContain("Outside reachable hours");
       expect(tooltip.value).toContain("Next window: Morning Focus");
+    });
+
+    it("shows sync state labels in tooltip", () => {
+      const contract = makeContract({ mode: "busy" });
+      const schedule = makeSchedule();
+
+      manager.update(contract, schedule);
+      manager.setSyncState("realtime");
+      let tooltip = (getStatusBarItem(manager).tooltip as MarkdownString).value;
+      expect(tooltip).toContain("Sync: Realtime");
+
+      manager.setSyncState("polling");
+      tooltip = (getStatusBarItem(manager).tooltip as MarkdownString).value;
+      expect(tooltip).toContain("Sync: Polling fallback");
     });
 
     it("sets command to headsdown.quickAction", () => {

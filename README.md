@@ -8,6 +8,7 @@ Focus mode awareness for VS Code and Cursor. Shows your availability status in t
 - **Device Flow authentication** with one-click browser sign-in
 - **Local coding timer** that works before you sign in, so you see value immediately
 - **Real-time subscriptions** with polling fallback to keep your status in sync across tools
+- **Sync transport visibility** in tooltip, so you can see Realtime vs Polling fallback
 - **AI agent awareness** so tools like Cursor, Copilot, and Claude Code can respect your focus time
 
 ## Getting Started

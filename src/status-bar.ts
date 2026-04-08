@@ -9,6 +9,8 @@ interface StatusState {
   schedule: ScheduleResolution | null;
 }
 
+type SyncState = "unknown" | "realtime" | "polling";
+
 /** Callback fired when unauthenticated coding activity crosses the auto-detect threshold. */
 export type ActivityThresholdCallback = (minutes: number) => void;
 
@@ -26,6 +28,7 @@ export class StatusBarManager {
 
   private state: StatusState = { contract: null, schedule: null };
   private authenticated = false;
+  private syncState: SyncState = "unknown";
 
   // Unauthenticated activity tracking
   private activityMinutes = 0;
@@ -52,9 +55,18 @@ export class StatusBarManager {
     this.render();
   }
 
+  /** Track current sync transport state for user visibility in tooltip. */
+  setSyncState(state: SyncState): void {
+    this.syncState = state;
+    if (this.authenticated) {
+      this.render();
+    }
+  }
+
   /** Render the status bar for an unauthenticated user. */
   showUnauthenticated(codingMinutes?: number): void {
     this.authenticated = false;
+    this.syncState = "unknown";
     this.state = { contract: null, schedule: null };
 
     if (codingMinutes && codingMinutes >= 10) {
@@ -165,8 +177,9 @@ export class StatusBarManager {
     this.item.text = "$(cloud-offline) HeadsDown";
     this.item.color = undefined;
     this.item.backgroundColor = undefined;
+    const syncLabel = this.getSyncStateLabel();
     this.item.tooltip = new vscode.MarkdownString(
-      "**HeadsDown**\n\nUnable to reach the HeadsDown API.\n\n_Click to retry._",
+      `**HeadsDown**\n\nUnable to reach the HeadsDown API.\n\nSync: ${syncLabel}\n\n_Click to retry._`,
     );
   }
 
@@ -329,6 +342,8 @@ export class StatusBarManager {
       lines.push(`\uD83D\uDD15 Policy: ${this.humanizeRuleSetType(contract.ruleSetType)}`);
     }
 
+    lines.push(`\uD83D\uDD04 Sync: ${this.getSyncStateLabel()}`);
+
     // Trust level
     const trustLevel = this.settings.get("trustLevel");
     lines.push(`\uD83D\uDCCB Trust level: ${trustLevel}`);
@@ -373,6 +388,17 @@ export class StatusBarManager {
       .replace(/\s+/g, " ")
       .trim()
       .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  private getSyncStateLabel(): string {
+    switch (this.syncState) {
+      case "realtime":
+        return "Realtime";
+      case "polling":
+        return "Polling fallback";
+      default:
+        return "Connecting";
+    }
   }
 
   private hasStatusChanged(

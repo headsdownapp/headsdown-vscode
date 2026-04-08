@@ -46,6 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       availabilitySubscription?.stop();
       availabilitySubscription = null;
       statusBar.stopPolling();
+      statusBar.setSyncState("unknown");
       statusBar.stopTimer();
       statusBar.showUnauthenticated();
       statusBar.startActivityTracking();
@@ -107,6 +108,7 @@ async function refreshAuthenticatedState(): Promise<void> {
     statusBar.update(contract, schedule);
     logger.log(formatContractLog(contract));
     statusBar.startTimer();
+    statusBar.setSyncState("unknown");
     startRealtimeUpdates(client);
   } catch (error) {
     logger.log(
@@ -116,6 +118,7 @@ async function refreshAuthenticatedState(): Promise<void> {
 
     // Poll so we can auto-recover even if initial subscription connection fails
     statusBar.startTimer();
+    statusBar.setSyncState("polling");
     const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
     statusBar.startPolling(client, intervalMs);
   }
@@ -127,6 +130,7 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
   const token = authManager.getApiKey();
   if (!token) {
     logger.log("Subscriptions: missing API token, using polling fallback.");
+    statusBar.setSyncState("polling");
     const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
     statusBar.startPolling(client, intervalMs);
     return;
@@ -139,10 +143,12 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
     {
       onConnected: () => {
         logger.log("Subscriptions: connected (graphql-transport-ws)");
+        statusBar.setSyncState("realtime");
         statusBar.stopPolling();
       },
       onDisconnected: (reason) => {
         logger.log(`Subscriptions: disconnected (${reason}), enabling polling fallback.`);
+        statusBar.setSyncState("polling");
         const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
         statusBar.startPolling(client, intervalMs);
       },
@@ -161,6 +167,7 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
       },
       onError: (message) => {
         logger.log(`Subscriptions: ${message}`);
+        statusBar.setSyncState("polling");
         const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
         statusBar.startPolling(client, intervalMs);
       },
