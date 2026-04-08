@@ -1,18 +1,18 @@
 import * as vscode from "vscode";
-import { ConfigStore } from "@headsdown/sdk";
+import { ConfigStore, type HeadsDownClient } from "@headsdown/sdk";
 import { OutputLogger } from "./output.js";
 import { AuthManager } from "./auth.js";
 import { StatusBarManager } from "./status-bar.js";
 import { SettingsManager } from "./settings.js";
+import { AvailabilitySubscription } from "./subscription.js";
 
-const FIRST_ACTIVATED_KEY = "headsdown.firstActivatedAt";
 const FIRST_RUN_DISMISSED_KEY = "headsdown.firstRunDismissed";
 
 let logger: OutputLogger;
 let authManager: AuthManager;
 let statusBar: StatusBarManager;
 let settingsManager: SettingsManager;
-let firstInstallTimeout: ReturnType<typeof setTimeout> | null = null;
+let availabilitySubscription: AvailabilitySubscription | null = null;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Initialize core services
@@ -20,6 +20,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   settingsManager = new SettingsManager();
   statusBar = new StatusBarManager(logger, settingsManager);
   authManager = new AuthManager(context.secrets, logger, () => settingsManager.get("apiBaseUrl"));
+
+  // Register sign-in nudge callback once; tracking may start later depending on auth state.
+  statusBar.onActivityThreshold((minutes) => {
+    void showActivitySignInNudge(context, minutes);
+  });
 
   // Prime the shared config cache so synchronous get() calls work
   await settingsManager.primeCache();
@@ -38,6 +43,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("headsdown.signOut", async () => {
       await authManager.signOut();
+      availabilitySubscription?.stop();
+      availabilitySubscription = null;
       statusBar.stopPolling();
       statusBar.stopTimer();
       statusBar.showUnauthenticated();
@@ -78,15 +85,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   } else {
     statusBar.showUnauthenticated();
     statusBar.startActivityTracking();
-    await handleFirstInstall(context);
   }
 }
 
 export function deactivate(): void {
-  if (firstInstallTimeout !== null) {
-    clearTimeout(firstInstallTimeout);
-    firstInstallTimeout = null;
-  }
+  availabilitySubscription?.stop();
+  availabilitySubscription = null;
   // VS Code disposes subscriptions automatically, but be explicit
   statusBar?.dispose();
   logger?.dispose();
@@ -99,25 +103,71 @@ async function refreshAuthenticatedState(): Promise<void> {
   if (!client) return;
 
   try {
-    const { contract, calendar } = await client.getAvailability();
-    statusBar.update(contract, calendar);
+    const { contract, schedule } = await client.getAvailability();
+    statusBar.update(contract, schedule);
     logger.log(formatContractLog(contract));
-
-    // Start timer and polling
     statusBar.startTimer();
-    const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
-    statusBar.startPolling(client, intervalMs);
+    startRealtimeUpdates(client);
   } catch (error) {
     logger.log(
       `Failed to fetch availability: ${error instanceof Error ? error.message : String(error)}`,
     );
     statusBar.showApiUnreachable();
 
-    // Still start polling so we can auto-recover when the API becomes reachable
+    // Poll so we can auto-recover even if initial subscription connection fails
     statusBar.startTimer();
     const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
     statusBar.startPolling(client, intervalMs);
   }
+}
+
+function startRealtimeUpdates(client: HeadsDownClient): void {
+  availabilitySubscription?.stop();
+
+  const token = authManager.getApiKey();
+  if (!token) {
+    logger.log("Subscriptions: missing API token, using polling fallback.");
+    const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
+    statusBar.startPolling(client, intervalMs);
+    return;
+  }
+
+  availabilitySubscription = new AvailabilitySubscription(
+    logger,
+    () => settingsManager.get("apiBaseUrl"),
+    () => authManager.getApiKey(),
+    {
+      onConnected: () => {
+        logger.log("Subscriptions: connected (graphql-transport-ws)");
+        statusBar.stopPolling();
+      },
+      onDisconnected: (reason) => {
+        logger.log(`Subscriptions: disconnected (${reason}), enabling polling fallback.`);
+        const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
+        statusBar.startPolling(client, intervalMs);
+      },
+      onContractChanged: () => {
+        void (async () => {
+          try {
+            const { contract, schedule } = await client.getAvailability();
+            statusBar.update(contract, schedule);
+            logger.log(formatContractLog(contract));
+          } catch (error) {
+            logger.log(
+              `Subscription refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        })();
+      },
+      onError: (message) => {
+        logger.log(`Subscriptions: ${message}`);
+        const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
+        statusBar.startPolling(client, intervalMs);
+      },
+    },
+  );
+
+  availabilitySubscription.start();
 }
 
 function formatContractLog(
@@ -127,11 +177,12 @@ function formatContractLog(
     statusEmoji?: string | null;
     expiresAt?: string | null;
     lock?: boolean | null;
+    ruleSetType?: string | null;
   } | null,
 ): string {
   if (!contract) return "Status: no active contract";
 
-  const parts: string[] = [`Status: ${capitalize(contract.mode)}`];
+  const parts: string[] = [`Status: ${formatModeLabel(contract.mode)}`];
 
   if (contract.statusText) {
     const emoji = contract.statusEmoji ? `${contract.statusEmoji} ` : "";
@@ -143,13 +194,29 @@ function formatContractLog(
     if (remaining > 0) parts.push(`${remaining}m remaining`);
   }
 
+  if (contract.ruleSetType) {
+    const policy = contract.ruleSetType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    parts.push(`policy: ${policy}`);
+  }
+
   if (contract.lock) parts.push("locked");
 
   return parts.join(" \u00b7 ");
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+function formatModeLabel(mode: string): string {
+  switch (mode) {
+    case "online":
+      return "Online";
+    case "busy":
+      return "Focused";
+    case "limited":
+      return "Away";
+    case "offline":
+      return "Offline";
+    default:
+      return mode.charAt(0).toUpperCase() + mode.slice(1);
+  }
 }
 
 // === Settings changes ===
@@ -169,12 +236,6 @@ async function onSettingsChanged(): Promise<void> {
   }
 
   if (authManager.isAuthenticated()) {
-    const client = authManager.getClient();
-    if (client) {
-      statusBar.stopPolling();
-      const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
-      statusBar.startPolling(client, intervalMs);
-    }
     await refreshAuthenticatedState();
   }
 }
@@ -246,54 +307,22 @@ async function showUnauthenticatedQuickPick(): Promise<void> {
   }
 }
 
-// === First Install Notification ===
+// === Activity-Based Sign-In Nudge ===
 
-async function handleFirstInstall(context: vscode.ExtensionContext): Promise<void> {
-  const dismissed = context.globalState.get<boolean>(FIRST_RUN_DISMISSED_KEY);
-  if (dismissed) return;
-
-  const firstActivatedAt = context.globalState.get<string>(FIRST_ACTIVATED_KEY);
-
-  if (!firstActivatedAt) {
-    // First ever activation: record the timestamp, don't show yet
-    await context.globalState.update(FIRST_ACTIVATED_KEY, new Date().toISOString());
-    logger.log(
-      "First activation recorded. Welcome notification will appear in 24h if auto-detect doesn't fire first.",
-    );
-    return;
-  }
-
-  // Check if 24 hours have passed
-  const activatedMs = new Date(firstActivatedAt).getTime();
-  const elapsed = Date.now() - activatedMs;
-  const twentyFourHours = 24 * 60 * 60 * 1000;
-
-  if (elapsed < twentyFourHours) {
-    // Schedule a check for when 24h elapses (within this session)
-    const remainingMs = twentyFourHours - elapsed;
-    if (remainingMs < 60 * 60 * 1000) {
-      // Only schedule if less than 1 hour remaining (reasonable session length)
-      firstInstallTimeout = setTimeout(() => {
-        firstInstallTimeout = null;
-        showFirstInstallNotification(context);
-      }, remainingMs);
-    }
-    return;
-  }
-
-  // 24 hours have passed without auto-detect firing
-  await showFirstInstallNotification(context);
-}
-
-async function showFirstInstallNotification(context: vscode.ExtensionContext): Promise<void> {
+async function showActivitySignInNudge(
+  context: vscode.ExtensionContext,
+  minutes: number,
+): Promise<void> {
   const dismissed = context.globalState.get<boolean>(FIRST_RUN_DISMISSED_KEY);
   if (dismissed) return;
 
   // Don't show if user has already authenticated
   if (authManager.isAuthenticated()) return;
 
+  logger.log(`Sustained coding detected (${minutes}m). Showing sign-in nudge.`);
+
   const action = await vscode.window.showInformationMessage(
-    "HeadsDown gives your AI agent awareness of your focus mode and availability.",
+    `You've been coding for ${minutes} minutes. Want to protect your focus time with HeadsDown?`,
     "Sign In",
     "Learn More",
     "Dismiss",
@@ -305,6 +334,6 @@ async function showFirstInstallNotification(context: vscode.ExtensionContext): P
     await vscode.env.openExternal(vscode.Uri.parse("https://headsdown.app"));
   } else if (action === "Dismiss") {
     await context.globalState.update(FIRST_RUN_DISMISSED_KEY, true);
-    logger.log("First-install notification dismissed. Won't show again.");
+    logger.log("Sign-in nudge dismissed. Won't show again.");
   }
 }

@@ -7,7 +7,7 @@ Focus mode awareness for VS Code and Cursor. Shows your availability status in t
 - **Status bar indicator** showing your current availability mode, status text, and time remaining
 - **Device Flow authentication** with one-click browser sign-in
 - **Local coding timer** that works before you sign in, so you see value immediately
-- **Configurable polling** to keep your status in sync across tools
+- **Real-time subscriptions** with polling fallback to keep your status in sync across tools
 - **AI agent awareness** so tools like Cursor, Copilot, and Claude Code can respect your focus time
 
 ## Getting Started
@@ -25,9 +25,9 @@ Focus mode awareness for VS Code and Cursor. Shows your availability status in t
 |-------|---------|
 | Online | `● Online` |
 | Online with status | `● Online · ☕ Taking a break` |
-| Busy with timer | `● Heads Down · 47m` |
-| Busy, locked | `●🔒 Heads Down · 47m` |
-| Limited | `● Limited · 22m` |
+| Focused with timer | `● Focused · 47m` |
+| Focused, locked | `●🔒 Focused · 47m` |
+| Away | `● Away · 22m` |
 | Offline | `○ Offline` |
 | No contract | `● HeadsDown` |
 | API unreachable | `☁ HeadsDown` |
@@ -87,8 +87,8 @@ Before starting any multi-file change or task that takes more than a few minutes
 
 Mode behavior:
 - **online**: Proceed normally
-- **busy**: Deep focus. Prefer small, focused changes. Ask before large refactors.
-- **limited**: Reduce scope. One file at a time.
+- **busy** (focused): Deep focus. Prefer small, focused changes. Ask before large refactors.
+- **limited** (away): Reduce scope. One file at a time.
 - **offline**: User is away. Only make changes if explicitly asked.
 
 If status shows locked, do not attempt to work around it.

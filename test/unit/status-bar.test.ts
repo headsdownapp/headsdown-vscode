@@ -6,7 +6,7 @@ vi.mock("vscode", () => import("./mocks/vscode.js"));
 import { StatusBarManager } from "../../src/status-bar.js";
 import { OutputLogger } from "../../src/output.js";
 import { SettingsManager } from "../../src/settings.js";
-import type { Contract, Calendar } from "@headsdown/sdk";
+import type { Contract, ScheduleResolution } from "@headsdown/sdk";
 import { MockStatusBarItem, ThemeColor, MarkdownString, workspace } from "./mocks/vscode.js";
 
 // === Helpers ===
@@ -18,31 +18,51 @@ function makeContract(overrides: Partial<Contract> = {}): Contract {
     status: true,
     statusEmoji: null,
     statusText: null,
-    afk: false,
     autoRespond: false,
     lock: null,
     duration: null,
+    ruleSetType: null,
+    ruleSetParams: null,
     expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), // 60 min from now
     insertedAt: new Date().toISOString(),
-    recordMessages: false,
-    snooze: false,
     ...overrides,
   };
 }
 
-function makeCalendar(overrides: Partial<Calendar> = {}): Calendar {
+function makeSchedule(overrides: Partial<ScheduleResolution> = {}): ScheduleResolution {
   return {
-    automateEndOfDay: false,
-    automateStartOfDay: false,
-    day: "monday",
-    endsAt: "17:00:00",
-    nextWorkday: "tuesday",
-    nextWorkdayStartsAt: "09:00:00",
-    now: new Date().toISOString(),
-    offHours: false,
-    startsAt: "09:00:00",
-    workHours: true,
-    working: true,
+    inReachableHours: true,
+    nextTransitionAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    activeWindow: {
+      id: "w1",
+      label: "Deep Work",
+      priority: 1,
+      startTime: "09:00:00",
+      endTime: "12:00:00",
+      days: ["monday"],
+      mode: "busy",
+      alertsPolicy: "do_not_disturb",
+      snooze: false,
+      status: true,
+      statusEmoji: "\ud83d\udd25",
+      statusText: "Deep work",
+      autoActivate: true,
+    },
+    nextWindow: {
+      id: "w2",
+      label: "Meetings",
+      priority: 2,
+      startTime: "13:00:00",
+      endTime: "17:00:00",
+      days: ["monday"],
+      mode: "limited",
+      alertsPolicy: "interruptable",
+      snooze: false,
+      status: true,
+      statusEmoji: "\ud83d\udcac",
+      statusText: "In meetings",
+      autoActivate: true,
+    },
     ...overrides,
   };
 }
@@ -68,6 +88,8 @@ describe("StatusBarManager", () => {
         showTimeRemaining: true,
         trustLevel: "advisory",
         pollingIntervalSeconds: 300,
+        autoDetectEnabled: true,
+        autoDetectThresholdMinutes: 20,
       };
       return defaults[key] as never;
     });
@@ -86,7 +108,7 @@ describe("StatusBarManager", () => {
   describe("authenticated states", () => {
     it("shows Online for online mode with no status text", () => {
       const contract = makeContract({ mode: "online" });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
       expect(item.text).toBe("$(circle-filled) Online");
@@ -100,21 +122,21 @@ describe("StatusBarManager", () => {
         statusText: "Taking a break",
         statusEmoji: "☕",
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
       expect(item.text).toBe("$(circle-filled) Online · ☕ Taking a break");
     });
 
-    it("shows Heads Down with timer for busy mode", () => {
+    it("shows Focused with timer for busy mode", () => {
       const contract = makeContract({
         mode: "busy",
         expiresAt: new Date(Date.now() + 47 * 60_000).toISOString(),
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
-      expect(item.text).toBe("$(circle-filled) Heads Down · 47m");
+      expect(item.text).toBe("$(circle-filled) Focused · 47m");
       expect((item.color as ThemeColor).id).toBe("headsdown.busyColor");
     });
 
@@ -124,27 +146,27 @@ describe("StatusBarManager", () => {
         lock: true,
         expiresAt: new Date(Date.now() + 47 * 60_000).toISOString(),
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
-      expect(item.text).toBe("$(circle-filled)$(lock) Heads Down · 47m");
+      expect(item.text).toBe("$(circle-filled)$(lock) Focused · 47m");
     });
 
-    it("shows Limited with timer", () => {
+    it("shows Away with timer", () => {
       const contract = makeContract({
         mode: "limited",
         expiresAt: new Date(Date.now() + 22 * 60_000).toISOString(),
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
-      expect(item.text).toBe("$(circle-filled) Limited · 22m");
+      expect(item.text).toBe("$(circle-filled) Away · 22m");
       expect((item.color as ThemeColor).id).toBe("headsdown.limitedColor");
     });
 
     it("shows Offline with circle-outline", () => {
       const contract = makeContract({ mode: "offline" });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
       expect(item.text).toBe("$(circle-outline) Offline");
@@ -152,7 +174,7 @@ describe("StatusBarManager", () => {
     });
 
     it("shows HeadsDown with no mode label when no contract", () => {
-      manager.update(null, makeCalendar());
+      manager.update(null, makeSchedule());
 
       const item = getStatusBarItem(manager);
       expect(item.text).toBe("$(circle-filled) HeadsDown");
@@ -169,10 +191,10 @@ describe("StatusBarManager", () => {
         mode: "busy",
         expiresAt: new Date(Date.now() + 47 * 60_000).toISOString(),
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
-      expect(item.text).toBe("$(circle-filled) Heads Down");
+      expect(item.text).toBe("$(circle-filled) Focused");
       expect(item.text).not.toContain("47m");
     });
 
@@ -181,10 +203,10 @@ describe("StatusBarManager", () => {
         mode: "busy",
         expiresAt: new Date(Date.now() - 60_000).toISOString(),
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
-      expect(item.text).toBe("$(circle-filled) Heads Down");
+      expect(item.text).toBe("$(circle-filled) Focused");
     });
 
     it("renders tooltip with mode, time remaining, and trust level", () => {
@@ -194,15 +216,45 @@ describe("StatusBarManager", () => {
         expiresAt: new Date(Date.now() + 47 * 60_000).toISOString(),
         lock: true,
       });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
 
       const item = getStatusBarItem(manager);
       const tooltip = item.tooltip as MarkdownString;
-      expect(tooltip.value).toContain("HeadsDown: Heads Down");
+      expect(tooltip.value).toContain("HeadsDown: Focused");
       expect(tooltip.value).toContain("$(lock)");
       expect(tooltip.value).toContain("Deep work on auth refactor");
       expect(tooltip.value).toContain("47 minutes remaining");
       expect(tooltip.value).toContain("Trust level: advisory");
+    });
+
+    it("shows active and next window context in tooltip", () => {
+      const contract = makeContract({ mode: "busy" });
+      const schedule = makeSchedule({
+        activeWindow: { ...makeSchedule().activeWindow!, label: "Deep Work" },
+        nextWindow: { ...makeSchedule().nextWindow!, label: "Meetings" },
+      });
+      manager.update(contract, schedule);
+
+      const item = getStatusBarItem(manager);
+      const tooltip = item.tooltip as MarkdownString;
+      expect(tooltip.value).toContain("Active window: Deep Work");
+      expect(tooltip.value).toContain("Next window: Meetings");
+      expect(tooltip.value).toContain("Next transition:");
+    });
+
+    it("shows outside reachable hours context when no active window", () => {
+      const contract = makeContract({ mode: "offline" });
+      const schedule = makeSchedule({
+        inReachableHours: false,
+        activeWindow: null,
+        nextWindow: { ...makeSchedule().nextWindow!, label: "Morning Focus" },
+      });
+      manager.update(contract, schedule);
+
+      const item = getStatusBarItem(manager);
+      const tooltip = item.tooltip as MarkdownString;
+      expect(tooltip.value).toContain("Outside reachable hours");
+      expect(tooltip.value).toContain("Next window: Morning Focus");
     });
 
     it("sets command to headsdown.quickAction", () => {
@@ -217,7 +269,7 @@ describe("StatusBarManager", () => {
     it("recalculates time remaining every 60 seconds without API call", () => {
       const expiresAt = new Date(Date.now() + 47 * 60_000).toISOString();
       const contract = makeContract({ mode: "busy", expiresAt });
-      manager.update(contract, makeCalendar());
+      manager.update(contract, makeSchedule());
       manager.startTimer();
 
       const item = getStatusBarItem(manager);
@@ -331,6 +383,82 @@ describe("StatusBarManager", () => {
       // 14 >= 10, so "coding" should appear in the status bar
       const item = getStatusBarItem(manager);
       expect(item.text).toContain("coding 14m");
+    });
+
+    it("fires activity threshold callback once when threshold is reached", () => {
+      const callback = vi.fn();
+      manager.onActivityThreshold(callback);
+
+      // Mock auto-detect settings
+      vi.spyOn(settings, "get").mockImplementation((key: string) => {
+        if (key === "autoDetectEnabled") return true as never;
+        if (key === "autoDetectThresholdMinutes") return 20 as never;
+        if (key === "showTimeRemaining") return true as never;
+        return "advisory" as never;
+      });
+
+      const now = Date.now();
+      const currentMinute = Math.floor(now / 60000);
+      const activitySet = getMinutesWithActivity(manager);
+
+      // Simulate 20 minutes of activity
+      for (let i = 0; i < 20; i++) {
+        activitySet.add(currentMinute - i);
+      }
+
+      triggerActivityUpdate(manager);
+      expect(callback).toHaveBeenCalledOnce();
+      expect(callback).toHaveBeenCalledWith(20);
+
+      // Should not fire again
+      triggerActivityUpdate(manager);
+      expect(callback).toHaveBeenCalledOnce();
+    });
+
+    it("does not fire activity threshold callback below threshold", () => {
+      const callback = vi.fn();
+      manager.onActivityThreshold(callback);
+
+      vi.spyOn(settings, "get").mockImplementation((key: string) => {
+        if (key === "autoDetectEnabled") return true as never;
+        if (key === "autoDetectThresholdMinutes") return 20 as never;
+        if (key === "showTimeRemaining") return true as never;
+        return "advisory" as never;
+      });
+
+      const now = Date.now();
+      const currentMinute = Math.floor(now / 60000);
+      const activitySet = getMinutesWithActivity(manager);
+
+      // Only 10 minutes of activity
+      for (let i = 0; i < 10; i++) {
+        activitySet.add(currentMinute - i);
+      }
+
+      triggerActivityUpdate(manager);
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("does not fire threshold callback when auto-detect is disabled", () => {
+      const callback = vi.fn();
+      manager.onActivityThreshold(callback);
+
+      vi.spyOn(settings, "get").mockImplementation((key: string) => {
+        if (key === "autoDetectEnabled") return false as never;
+        if (key === "autoDetectThresholdMinutes") return 20 as never;
+        if (key === "showTimeRemaining") return true as never;
+        return "advisory" as never;
+      });
+
+      const now = Date.now();
+      const currentMinute = Math.floor(now / 60000);
+      const activitySet = getMinutesWithActivity(manager);
+      for (let i = 0; i < 25; i++) {
+        activitySet.add(currentMinute - i);
+      }
+
+      triggerActivityUpdate(manager);
+      expect(callback).not.toHaveBeenCalled();
     });
 
     it("breaks streak on gaps longer than 2 minutes", () => {

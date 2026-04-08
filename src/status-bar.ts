@@ -1,13 +1,16 @@
 import * as vscode from "vscode";
-import type { Contract, Calendar, HeadsDownClient, Mode } from "@headsdown/sdk";
+import type { Contract, HeadsDownClient, Mode, ScheduleResolution } from "@headsdown/sdk";
 import type { OutputLogger } from "./output.js";
 import type { SettingsManager } from "./settings.js";
 
 /** All information needed to render the status bar. */
 interface StatusState {
   contract: Contract | null;
-  calendar: Calendar | null;
+  schedule: ScheduleResolution | null;
 }
+
+/** Callback fired when unauthenticated coding activity crosses the auto-detect threshold. */
+export type ActivityThresholdCallback = (minutes: number) => void;
 
 /**
  * Manages the HeadsDown status bar item.
@@ -21,7 +24,7 @@ export class StatusBarManager {
   private activityInterval: ReturnType<typeof setInterval> | null = null;
   private documentChangeListener: vscode.Disposable | null = null;
 
-  private state: StatusState = { contract: null, calendar: null };
+  private state: StatusState = { contract: null, schedule: null };
   private authenticated = false;
 
   // Unauthenticated activity tracking
@@ -29,6 +32,8 @@ export class StatusBarManager {
   private lastActivityTimestamp = 0;
   private activityStreakStart = 0;
   private minutesWithActivity = new Set<number>();
+  private activityThresholdCallback: ActivityThresholdCallback | null = null;
+  private activityThresholdFired = false;
 
   constructor(
     private readonly logger: OutputLogger,
@@ -39,10 +44,10 @@ export class StatusBarManager {
     this.item.show();
   }
 
-  /** Update status bar for authenticated user with contract/calendar data. */
-  update(contract: Contract | null, calendar: Calendar | null): void {
+  /** Update status bar for authenticated user with contract/schedule data. */
+  update(contract: Contract | null, schedule: ScheduleResolution | null): void {
     this.authenticated = true;
-    this.state = { contract, calendar };
+    this.state = { contract, schedule };
     this.stopActivityTracking();
     this.render();
   }
@@ -50,7 +55,7 @@ export class StatusBarManager {
   /** Render the status bar for an unauthenticated user. */
   showUnauthenticated(codingMinutes?: number): void {
     this.authenticated = false;
-    this.state = { contract: null, calendar: null };
+    this.state = { contract: null, schedule: null };
 
     if (codingMinutes && codingMinutes >= 10) {
       this.item.text = `$(shield) HeadsDown \u00b7 coding ${codingMinutes}m`;
@@ -62,6 +67,12 @@ export class StatusBarManager {
 
     this.item.color = undefined;
     this.item.backgroundColor = undefined;
+  }
+
+  /** Register a callback fired once when unauthenticated coding crosses the auto-detect threshold. */
+  onActivityThreshold(callback: ActivityThresholdCallback): void {
+    this.activityThresholdCallback = callback;
+    this.activityThresholdFired = false;
   }
 
   /** Start tracking editor activity for unauthenticated coding timer. */
@@ -94,6 +105,7 @@ export class StatusBarManager {
     this.lastActivityTimestamp = 0;
     this.activityStreakStart = 0;
     this.minutesWithActivity.clear();
+    this.activityThresholdFired = false;
   }
 
   /** Start the 60-second timer tick for countdown updates. */
@@ -120,12 +132,12 @@ export class StatusBarManager {
 
     const poll = async () => {
       try {
-        const { contract, calendar } = await client.getAvailability();
-        const changed = this.hasStatusChanged(contract);
-        this.update(contract, calendar);
+        const { contract, schedule } = await client.getAvailability();
+        const changed = this.hasStatusChanged(contract, schedule);
+        this.update(contract, schedule);
 
         if (changed) {
-          this.logger.log(this.formatStatusLog(contract, calendar));
+          this.logger.log(this.formatStatusLog(contract, schedule));
         } else {
           this.logger.log("Poll: status unchanged");
         }
@@ -229,9 +241,9 @@ export class StatusBarManager {
       case "online":
         return "Online";
       case "busy":
-        return "Heads Down";
+        return "Focused";
       case "limited":
-        return "Limited";
+        return "Away";
       case "offline":
         return "Offline";
       default:
@@ -295,6 +307,28 @@ export class StatusBarManager {
       lines.push(`\u23F1 ${remaining} minutes remaining (expires ${expiresTime})`);
     }
 
+    // Schedule context
+    const { schedule } = this.state;
+    if (schedule) {
+      if (schedule.activeWindow) {
+        lines.push(`\uD83D\uDDD3 Active window: ${schedule.activeWindow.label}`);
+      } else if (!schedule.inReachableHours) {
+        lines.push("\uD83C\uDF19 Outside reachable hours");
+      }
+
+      if (schedule.nextTransitionAt) {
+        lines.push(`\u23ED Next transition: ${this.formatTimeString(schedule.nextTransitionAt)}`);
+      }
+
+      if (schedule.nextWindow) {
+        lines.push(`\u27A1 Next window: ${schedule.nextWindow.label}`);
+      }
+    }
+
+    if (contract.ruleSetType) {
+      lines.push(`\uD83D\uDD15 Policy: ${this.humanizeRuleSetType(contract.ruleSetType)}`);
+    }
+
     // Trust level
     const trustLevel = this.settings.get("trustLevel");
     lines.push(`\uD83D\uDCCB Trust level: ${trustLevel}`);
@@ -323,20 +357,46 @@ export class StatusBarManager {
     return md;
   }
 
-  private hasStatusChanged(newContract: Contract | null): boolean {
-    const old = this.state.contract;
-    if (!old && !newContract) return false;
-    if (!old || !newContract) return true;
-
-    return (
-      old.mode !== newContract.mode ||
-      old.statusText !== newContract.statusText ||
-      old.lock !== newContract.lock ||
-      old.expiresAt !== newContract.expiresAt
-    );
+  private formatTimeString(timeStr: string): string {
+    // Handle both full ISO datetime and HH:MM:SS time strings
+    try {
+      const date = timeStr.includes("T") ? new Date(timeStr) : new Date(`1970-01-01T${timeStr}`);
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    } catch {
+      return timeStr;
+    }
   }
 
-  private formatStatusLog(contract: Contract | null, _calendar: Calendar | null): string {
+  private humanizeRuleSetType(ruleSetType: string): string {
+    return ruleSetType
+      .replace(/_/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  private hasStatusChanged(
+    newContract: Contract | null,
+    newSchedule: ScheduleResolution | null,
+  ): boolean {
+    const oldContract = this.state.contract;
+    const oldSchedule = this.state.schedule;
+
+    if ((!oldContract && newContract) || (oldContract && !newContract)) return true;
+    if (oldContract && newContract) {
+      const contractChanged =
+        oldContract.mode !== newContract.mode ||
+        oldContract.statusText !== newContract.statusText ||
+        oldContract.lock !== newContract.lock ||
+        oldContract.expiresAt !== newContract.expiresAt ||
+        oldContract.ruleSetType !== newContract.ruleSetType;
+      if (contractChanged) return true;
+    }
+
+    return this.hasScheduleChanged(oldSchedule, newSchedule);
+  }
+
+  private formatStatusLog(contract: Contract | null, schedule: ScheduleResolution | null): string {
     if (!contract) {
       return "Status: no active contract";
     }
@@ -353,11 +413,38 @@ export class StatusBarManager {
       parts.push(`${remaining}m remaining`);
     }
 
+    if (contract.ruleSetType) {
+      parts.push(`policy: ${this.humanizeRuleSetType(contract.ruleSetType)}`);
+    }
+
     if (contract.lock) {
       parts.push("locked");
     }
 
+    if (schedule?.activeWindow?.label) {
+      parts.push(`window: ${schedule.activeWindow.label}`);
+    }
+
+    if (schedule?.nextTransitionAt) {
+      parts.push(`next: ${this.formatTimeString(schedule.nextTransitionAt)}`);
+    }
+
     return parts.join(" \u00b7 ");
+  }
+
+  private hasScheduleChanged(
+    oldSchedule: ScheduleResolution | null,
+    newSchedule: ScheduleResolution | null,
+  ): boolean {
+    if (!oldSchedule && !newSchedule) return false;
+    if (!oldSchedule || !newSchedule) return true;
+
+    return (
+      oldSchedule.inReachableHours !== newSchedule.inReachableHours ||
+      oldSchedule.nextTransitionAt !== newSchedule.nextTransitionAt ||
+      oldSchedule.activeWindow?.id !== newSchedule.activeWindow?.id ||
+      oldSchedule.nextWindow?.id !== newSchedule.nextWindow?.id
+    );
   }
 
   private updateActivityTimer(): void {
@@ -404,5 +491,18 @@ export class StatusBarManager {
     }
 
     this.showUnauthenticated(this.activityMinutes);
+
+    // Fire threshold callback once when sustained coding is detected
+    const autoDetectEnabled = this.settings.get("autoDetectEnabled");
+    const threshold = this.settings.get("autoDetectThresholdMinutes");
+    if (
+      autoDetectEnabled &&
+      !this.activityThresholdFired &&
+      this.activityThresholdCallback &&
+      this.activityMinutes >= threshold
+    ) {
+      this.activityThresholdFired = true;
+      this.activityThresholdCallback(this.activityMinutes);
+    }
   }
 }

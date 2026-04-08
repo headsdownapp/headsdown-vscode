@@ -21,6 +21,7 @@ export class AuthManager {
 
   private client: HeadsDownClient | null = null;
   private profile: UserProfile | null = null;
+  private apiKey: string | null = null;
   private abortController: AbortController | null = null;
 
   constructor(
@@ -44,6 +45,7 @@ export class AuthManager {
         apiKey,
         baseUrl: this.getBaseUrl(),
       });
+      this.apiKey = apiKey;
       this.profile = await this.client.getProfile();
       this.logger.log(`Authenticated as ${this.profile.name ?? "unknown"} (${this.profile.email})`);
       return true;
@@ -54,6 +56,7 @@ export class AuthManager {
       await this.secretStorage.delete(AuthManager.SECRET_KEY);
       this.client = null;
       this.profile = null;
+      this.apiKey = null;
       return false;
     }
   }
@@ -113,6 +116,7 @@ export class AuthManager {
       // Create authenticated client
       this.client = new HeadsDownClient({ apiKey, baseUrl });
       this.profile = await this.client.getProfile();
+      this.apiKey = apiKey;
 
       this.logger.log(`Authenticated as ${this.profile.name ?? "unknown"} (${this.profile.email})`);
       vscode.window.showInformationMessage(
@@ -150,6 +154,7 @@ export class AuthManager {
     await this.secretStorage.delete(AuthManager.SECRET_KEY);
     this.client = null;
     this.profile = null;
+    this.apiKey = null;
     this.logger.log("Signed out.");
     vscode.window.showInformationMessage("HeadsDown: Signed out.");
   }
@@ -162,6 +167,11 @@ export class AuthManager {
   /** Get the authenticated user's profile. Returns null if not authenticated. */
   getProfile(): UserProfile | null {
     return this.profile;
+  }
+
+  /** Get the active API key token for GraphQL WebSocket auth. */
+  getApiKey(): string | null {
+    return this.apiKey;
   }
 
   /** Whether the user is currently authenticated. */
