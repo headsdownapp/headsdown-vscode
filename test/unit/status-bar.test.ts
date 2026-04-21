@@ -258,6 +258,27 @@ describe("StatusBarManager", () => {
       expect(tooltip.value).toContain("Next window: Morning Focus");
     });
 
+    it("shows Wrap-Up guidance when active", () => {
+      const contract = makeContract({ mode: "busy" });
+      const schedule = makeSchedule({
+        wrapUpGuidance: {
+          active: true,
+          deadlineAt: new Date(Date.now() + 20 * 60_000).toISOString(),
+          remainingMinutes: 20,
+          profile: "wrap_up",
+          source: "threshold",
+          reason: "Approaching end of focus window",
+          hints: ["Summarize progress"],
+          thresholdMinutes: 30,
+          selectedMode: "wrap_up",
+        },
+      } as never);
+      manager.update(contract, schedule);
+
+      const tooltip = getStatusBarItem(manager).tooltip as MarkdownString;
+      expect(tooltip.value).toContain("Wrap-Up: 20m remaining (wrap_up)");
+    });
+
     it("shows sync state labels in tooltip", () => {
       const contract = makeContract({ mode: "busy" });
       const schedule = makeSchedule();

@@ -33,6 +33,17 @@ describe("extension actor context helpers", () => {
   });
 });
 
+describe("delegation grant error messaging", () => {
+  it("maps session-token-only grant errors to explicit capability guidance", () => {
+    const mapped = __internal.mapDelegationGrantErrorMessage(
+      "Delegation grant management requires a session-token auth path. API keys cannot create or revoke grants.",
+    );
+
+    expect(mapped).toContain("session-token auth path");
+    expect(mapped).toContain("unavailable for API-key clients");
+  });
+});
+
 describe("availability override compatibility", () => {
   it("uses native sdk methods when available", async () => {
     const client = {

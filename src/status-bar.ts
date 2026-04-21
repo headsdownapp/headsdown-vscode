@@ -329,6 +329,12 @@ export class StatusBarManager {
         lines.push("\uD83C\uDF19 Outside reachable hours");
       }
 
+      if (schedule.wrapUpGuidance?.active) {
+        const minutes = schedule.wrapUpGuidance.remainingMinutes;
+        const timing = typeof minutes === "number" ? `${minutes}m remaining` : "active";
+        lines.push(`\uD83E\uDDFE Wrap-Up: ${timing} (${schedule.wrapUpGuidance.selectedMode})`);
+      }
+
       if (schedule.nextTransitionAt) {
         lines.push(`\u23ED Next transition: ${this.formatTimeString(schedule.nextTransitionAt)}`);
       }

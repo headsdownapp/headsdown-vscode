@@ -506,7 +506,7 @@ async function manageDelegationGrants(): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.log(`Delegation grant operation failed: ${message}`);
-    vscode.window.showErrorMessage(`HeadsDown: ${message}`);
+    vscode.window.showErrorMessage(`HeadsDown: ${mapDelegationGrantErrorMessage(message)}`);
   }
 }
 
@@ -782,6 +782,22 @@ function withActorContext(client: HeadsDownClient, feature: string): HeadsDownCl
   return client.withActor(buildActorContext(feature));
 }
 
+function isSessionTokenOnlyGrantError(message: string): boolean {
+  return (
+    message.includes("session-token auth path") ||
+    message.includes("session-token auth") ||
+    message.includes("Delegation grants require session-token auth")
+  );
+}
+
+function mapDelegationGrantErrorMessage(message: string): string {
+  if (isSessionTokenOnlyGrantError(message)) {
+    return "Delegation grant management requires a session-token auth path and is unavailable for API-key clients.";
+  }
+
+  return message;
+}
+
 function getLowLevelGraphQLClient(client: HeadsDownClient): {
   request: (query: string, variables?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 } | null {
@@ -897,6 +913,7 @@ export const __internal = {
   getActiveAvailabilityOverrideCompat,
   cancelAvailabilityOverrideCompat,
   formatGrantDescription,
+  mapDelegationGrantErrorMessage,
 };
 
 // === Activity-Based Sign-In Nudge ===
