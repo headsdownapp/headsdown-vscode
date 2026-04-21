@@ -91,10 +91,16 @@ Before starting any multi-file change or task that takes more than a few minutes
 3. If no HeadsDown tools are available, check the status bar indicator
 
 Mode behavior:
-- **online**: Proceed normally
+- **online**: Proceed normally.
 - **busy** (focused): Deep focus. Prefer small, focused changes. Ask before large refactors.
 - **limited** (away): Reduce scope. One file at a time.
 - **offline**: User is away. Only make changes if explicitly asked.
+
+Wrap-Up behavior (cold-start instructions for any model):
+- If `wrapUpGuidance.active` is true and `selectedMode` is `wrap_up`, apply this execution policy: keep scope minimal, avoid starting new refactors, finish the current slice cleanly, and include clear handoff notes for deferred work.
+- If `wrapUpGuidance.active` is true and `selectedMode` is `full_depth`, apply this execution policy: proceed with full implementation depth, include robust validation and tests, and do not shrink scope only because a deadline is near.
+- If `selectedMode` is `auto`, follow the provided context to balance scope and depth, stay focused on the requested outcome, and avoid unnecessary expansion.
+- When present, include `remainingMinutes`, `reason`, and `hints` in your planning and execution choices.
 
 If status shows locked, do not attempt to work around it.
 ```
