@@ -12,6 +12,31 @@ interface StatusState {
 
 type SyncState = "unknown" | "realtime" | "polling";
 
+export interface StatusSnapshot {
+  authenticated: boolean;
+  syncState: SyncState;
+  trustLevel: string;
+  contract: {
+    id: string;
+    mode: Mode;
+    statusText: string | null;
+    statusEmoji: string | null;
+    locked: boolean;
+    ruleSetType: string | null;
+    expiresAt: string | null;
+    remainingMinutes: number | null;
+  } | null;
+  schedule: {
+    inReachableHours: boolean;
+    nextTransitionAt: string | null;
+    activeWindowLabel: string | null;
+    nextWindowLabel: string | null;
+    wrapUpMode: string | null;
+    wrapUpRemainingMinutes: number | null;
+    executionInstruction: string | null;
+  } | null;
+}
+
 /** Callback fired when unauthenticated coding activity crosses the auto-detect threshold. */
 export type ActivityThresholdCallback = (minutes: number) => void;
 
@@ -38,6 +63,7 @@ export class StatusBarManager {
   private minutesWithActivity = new Set<number>();
   private activityThresholdCallback: ActivityThresholdCallback | null = null;
   private activityThresholdFired = false;
+  private warnedExpiryKey: string | null = null;
 
   constructor(
     private readonly logger: OutputLogger,
@@ -69,6 +95,7 @@ export class StatusBarManager {
     this.authenticated = false;
     this.syncState = "unknown";
     this.state = { contract: null, schedule: null };
+    this.warnedExpiryKey = null;
 
     if (codingMinutes && codingMinutes >= 10) {
       this.item.text = `$(shield) HeadsDown \u00b7 coding ${codingMinutes}m`;
@@ -102,6 +129,39 @@ export class StatusBarManager {
     this.activityInterval = setInterval(() => {
       this.updateActivityTimer();
     }, 60_000);
+  }
+
+  getStatusSnapshot(): StatusSnapshot {
+    const { contract, schedule } = this.state;
+
+    return {
+      authenticated: this.authenticated,
+      syncState: this.syncState,
+      trustLevel: this.settings.get("trustLevel"),
+      contract: contract
+        ? {
+            id: contract.id,
+            mode: contract.mode,
+            statusText: contract.statusText ?? null,
+            statusEmoji: contract.statusEmoji ?? null,
+            locked: contract.lock === true,
+            ruleSetType: contract.ruleSetType ?? null,
+            expiresAt: contract.expiresAt ?? null,
+            remainingMinutes: this.calculateRemainingMinutes(contract.expiresAt),
+          }
+        : null,
+      schedule: schedule
+        ? {
+            inReachableHours: schedule.inReachableHours,
+            nextTransitionAt: schedule.nextTransitionAt ?? null,
+            activeWindowLabel: schedule.activeWindow?.label ?? null,
+            nextWindowLabel: schedule.nextWindow?.label ?? null,
+            wrapUpMode: schedule.wrapUpGuidance?.selectedMode ?? null,
+            wrapUpRemainingMinutes: schedule.wrapUpGuidance?.remainingMinutes ?? null,
+            executionInstruction: this.resolveExecutionInstruction({ contract, schedule }),
+          }
+        : null,
+    };
   }
 
   /** Stop tracking editor activity. */
@@ -199,6 +259,7 @@ export class StatusBarManager {
 
     if (!contract) {
       // Authenticated but no active contract
+      this.warnedExpiryKey = null;
       this.item.text = "$(circle-filled) HeadsDown";
       this.item.color = undefined;
       this.item.backgroundColor = undefined;
@@ -248,6 +309,7 @@ export class StatusBarManager {
     this.item.color = this.getThemeColor(mode);
     this.item.backgroundColor = undefined;
     this.item.tooltip = this.buildAuthenticatedTooltip(contract);
+    this.maybeShowExpiryWarning(contract);
   }
 
   private getModeLabel(mode: Mode): string {
@@ -278,6 +340,35 @@ export class StatusBarManager {
       default:
         return undefined;
     }
+  }
+
+  private maybeShowExpiryWarning(contract: Contract): void {
+    if (!this.settings.get("notificationsEnabled")) return;
+
+    if (contract.mode !== "busy" && contract.mode !== "limited") return;
+    if (!contract.expiresAt) return;
+
+    const remaining = this.calculateRemainingMinutes(contract.expiresAt);
+    if (remaining === null || remaining <= 0) return;
+
+    const threshold = this.settings.get("expiryWarningMinutes");
+    if (remaining > threshold) return;
+
+    const warningKey = `${contract.id}:${contract.expiresAt}`;
+    if (this.warnedExpiryKey === warningKey) return;
+
+    this.warnedExpiryKey = warningKey;
+    const modeLabel = this.getModeLabel(contract.mode);
+    void vscode.window
+      .showWarningMessage(
+        `HeadsDown: ${modeLabel} status expires in ${remaining} minute${remaining === 1 ? "" : "s"}.`,
+        "Manage Override",
+      )
+      .then((selection) => {
+        if (selection === "Manage Override") {
+          void vscode.commands.executeCommand("headsdown.manageAvailabilityOverride");
+        }
+      });
   }
 
   private calculateRemainingMinutes(expiresAt: string | null): number | null {

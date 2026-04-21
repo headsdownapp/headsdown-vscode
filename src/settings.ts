@@ -3,7 +3,19 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const SHARED_CONFIG_PATH = join(homedir(), ".config", "headsdown", "config.json");
+function resolveSharedConfigPath(): string {
+  const explicitPath = process.env.HEADSDOWN_CONFIG_PATH?.trim();
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  const portableRoot = process.env.VSCODE_PORTABLE?.trim();
+  if (vscode.env.isAppPortable && portableRoot) {
+    return join(portableRoot, "headsdown", "config.json");
+  }
+
+  return join(homedir(), ".config", "headsdown", "config.json");
+}
 
 export type TrustLevel = "advisory" | "active" | "guarded";
 
@@ -18,6 +30,7 @@ export interface HeadsDownSettings {
   autoDetectThresholdMinutes: number;
   apiBaseUrl: string;
   calibration: boolean;
+  experimentalEnablePromptResources: boolean;
 }
 
 const VALID_TRUST_LEVELS: TrustLevel[] = ["advisory", "active", "guarded"];
@@ -33,8 +46,8 @@ const DEFAULTS: HeadsDownSettings = {
   autoDetectThresholdMinutes: 20,
   apiBaseUrl: "https://headsdown.app",
   calibration: true,
+  experimentalEnablePromptResources: false,
 };
-
 /**
  * Settings manager that resolves values from:
  * 1. VS Code settings (user/workspace)
@@ -112,6 +125,13 @@ export class SettingsManager {
         "calibration",
         DEFAULTS.calibration,
       ),
+      experimentalEnablePromptResources: this.resolve<boolean>(
+        config,
+        "experimental.enablePromptResources",
+        shared,
+        "experimentalEnablePromptResources",
+        DEFAULTS.experimentalEnablePromptResources,
+      ),
     };
   }
 
@@ -136,6 +156,7 @@ export class SettingsManager {
       autoDetectThresholdMinutes: "autoDetect.thresholdMinutes",
       apiBaseUrl: "api.baseUrl",
       calibration: "calibration",
+      experimentalEnablePromptResources: "experimental.enablePromptResources",
     };
 
     const SHARED_KEY_MAP: Record<keyof HeadsDownSettings, string> = {
@@ -149,6 +170,7 @@ export class SettingsManager {
       autoDetectThresholdMinutes: "autoDetectThresholdMinutes",
       apiBaseUrl: "baseUrl",
       calibration: "calibration",
+      experimentalEnablePromptResources: "experimentalEnablePromptResources",
     };
 
     if (key === "trustLevel") {
@@ -188,7 +210,7 @@ export class SettingsManager {
     }
 
     try {
-      const raw = await readFile(SHARED_CONFIG_PATH, "utf-8");
+      const raw = await readFile(resolveSharedConfigPath(), "utf-8");
       this.sharedConfig = JSON.parse(raw) as Record<string, unknown>;
     } catch (error: unknown) {
       // ENOENT is expected (no shared config file), anything else is worth noting
@@ -198,7 +220,7 @@ export class SettingsManager {
         (error as NodeJS.ErrnoException).code === "ENOENT";
       if (!isNotFound && error instanceof SyntaxError) {
         // Malformed JSON in shared config, user should know
-        console.warn(`HeadsDown: failed to parse ${SHARED_CONFIG_PATH}: ${error.message}`);
+        console.warn(`HeadsDown: failed to parse ${resolveSharedConfigPath()}: ${error.message}`);
       }
       this.sharedConfig = null;
     }
@@ -270,3 +292,7 @@ export class SettingsManager {
     return merged;
   }
 }
+
+export const __internal = {
+  resolveSharedConfigPath,
+};

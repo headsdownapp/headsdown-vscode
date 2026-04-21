@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { ConfigStore, type HeadsDownClient } from "@headsdown/sdk";
 import type {
   ActorContext,
@@ -21,6 +23,8 @@ let authManager: AuthManager;
 let statusBar: StatusBarManager;
 let settingsManager: SettingsManager;
 let availabilitySubscription: AvailabilitySubscription | null = null;
+let extensionContext: vscode.ExtensionContext | null = null;
+let controlCenterPanel: vscode.WebviewPanel | null = null;
 
 interface AvailabilityOverride {
   id: string;
@@ -91,6 +95,8 @@ const CANCEL_AVAILABILITY_OVERRIDE_MUTATION = `
 `;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  extensionContext = context;
+
   // Initialize core services
   logger = new OutputLogger();
   settingsManager = new SettingsManager();
@@ -126,6 +132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       statusBar.stopTimer();
       statusBar.showUnauthenticated();
       statusBar.startActivityTracking();
+      updateControlCenter();
     }),
 
     vscode.commands.registerCommand("headsdown.quickAction", async () => {
@@ -146,6 +153,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("headsdown.manageAvailabilityOverride", async () => {
       await manageAvailabilityOverride();
+    }),
+
+    vscode.commands.registerCommand("headsdown.bootstrapAgentFiles", async () => {
+      await bootstrapAgentFiles();
+    }),
+
+    vscode.commands.registerCommand("headsdown.copyStatusSnapshot", async () => {
+      await copyStatusSnapshot();
+    }),
+
+    vscode.commands.registerCommand("headsdown.openControlCenter", async () => {
+      await openControlCenter();
+    }),
+
+    vscode.commands.registerCommand("headsdown.generatePromptResources", async () => {
+      await generatePromptResources();
     }),
   );
 
@@ -176,6 +199,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
   availabilitySubscription?.stop();
   availabilitySubscription = null;
+  controlCenterPanel?.dispose();
+  controlCenterPanel = null;
   // VS Code disposes subscriptions automatically, but be explicit
   statusBar?.dispose();
   logger?.dispose();
@@ -194,6 +219,7 @@ async function refreshAuthenticatedState(): Promise<void> {
     logger.log(formatContractLog(contract));
     statusBar.startTimer();
     statusBar.setSyncState("unknown");
+    updateControlCenter();
     startRealtimeUpdates(client);
   } catch (error) {
     logger.log(
@@ -206,6 +232,7 @@ async function refreshAuthenticatedState(): Promise<void> {
     statusBar.setSyncState("polling");
     const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
     statusBar.startPolling(withActorContext(client, "status.polling_fallback"), intervalMs);
+    updateControlCenter();
   }
 }
 
@@ -230,12 +257,14 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
         logger.log("Subscriptions: connected (graphql-transport-ws)");
         statusBar.setSyncState("realtime");
         statusBar.stopPolling();
+        updateControlCenter();
       },
       onDisconnected: (reason) => {
         logger.log(`Subscriptions: disconnected (${reason}), enabling polling fallback.`);
         statusBar.setSyncState("polling");
         const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
         statusBar.startPolling(withActorContext(client, "status.polling_disconnect"), intervalMs);
+        updateControlCenter();
       },
       onContractChanged: () => {
         void (async () => {
@@ -244,6 +273,7 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
             const { contract, schedule } = await actorClient.getAvailability();
             statusBar.update(contract, schedule);
             logger.log(formatContractLog(contract));
+            updateControlCenter();
           } catch (error) {
             logger.log(
               `Subscription refresh failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -256,6 +286,7 @@ function startRealtimeUpdates(client: HeadsDownClient): void {
         statusBar.setSyncState("polling");
         const intervalMs = settingsManager.get("pollingIntervalSeconds") * 1000;
         statusBar.startPolling(withActorContext(client, "status.polling_error"), intervalMs);
+        updateControlCenter();
       },
     },
   );
@@ -331,6 +362,8 @@ async function onSettingsChanged(): Promise<void> {
   if (authManager.isAuthenticated()) {
     await refreshAuthenticatedState();
   }
+
+  updateControlCenter();
 }
 
 // === Quick Picks ===
@@ -351,8 +384,24 @@ async function showAuthenticatedQuickPick(): Promise<void> {
       description: profile ? `Signed in as ${profile.name ?? profile.email}` : undefined,
     },
     {
+      label: "$(graph) Open Control Center",
+      description: "Open a focused HeadsDown dashboard",
+    },
+    {
+      label: "$(copy) Copy Status Snapshot",
+      description: "Copy current mode, timing, and policy context",
+    },
+    {
       label: "$(output) Show Logs",
       description: "View HeadsDown output channel",
+    },
+    {
+      label: "$(file-add) Bootstrap Agent Files",
+      description: "Scaffold Cursor, Claude, and Copilot files",
+    },
+    {
+      label: "$(sparkle) Generate Prompt Resources",
+      description: "Create experimental HeadsDown prompt files",
     },
     {
       label: "$(gear) Settings",
@@ -373,8 +422,16 @@ async function showAuthenticatedQuickPick(): Promise<void> {
     await vscode.commands.executeCommand("headsdown.manageDelegationGrants");
   } else if (selected.label.includes("Sign Out")) {
     await vscode.commands.executeCommand("headsdown.signOut");
+  } else if (selected.label.includes("Open Control Center")) {
+    await vscode.commands.executeCommand("headsdown.openControlCenter");
+  } else if (selected.label.includes("Copy Status Snapshot")) {
+    await vscode.commands.executeCommand("headsdown.copyStatusSnapshot");
   } else if (selected.label.includes("Show Logs")) {
     logger.show();
+  } else if (selected.label.includes("Bootstrap Agent Files")) {
+    await vscode.commands.executeCommand("headsdown.bootstrapAgentFiles");
+  } else if (selected.label.includes("Generate Prompt Resources")) {
+    await vscode.commands.executeCommand("headsdown.generatePromptResources");
   } else if (selected.label.includes("Settings")) {
     await vscode.commands.executeCommand("workbench.action.openSettings", "headsdown");
   }
@@ -389,6 +446,10 @@ async function showUnauthenticatedQuickPick(): Promise<void> {
     {
       label: "$(globe) Learn More",
       description: "headsdown.app",
+    },
+    {
+      label: "$(file-add) Bootstrap Agent Files",
+      description: "Scaffold Cursor, Claude, and Copilot files",
     },
     {
       label: "$(gear) Settings",
@@ -407,6 +468,8 @@ async function showUnauthenticatedQuickPick(): Promise<void> {
     await vscode.commands.executeCommand("headsdown.signIn");
   } else if (selected.label.includes("Learn More")) {
     await vscode.env.openExternal(vscode.Uri.parse("https://headsdown.app"));
+  } else if (selected.label.includes("Bootstrap Agent Files")) {
+    await vscode.commands.executeCommand("headsdown.bootstrapAgentFiles");
   } else if (selected.label.includes("Settings")) {
     await vscode.commands.executeCommand("workbench.action.openSettings", "headsdown");
   }
@@ -609,32 +672,116 @@ function formatGrantDescription(grant: DelegationGrant): string {
 }
 
 async function promptDelegationGrantFilter(): Promise<DelegationGrantFilterInput | null> {
-  const activeChoice = await vscode.window.showQuickPick(
-    [
+  type ScopeChoice = DelegationGrantScope | undefined;
+
+  const scope = await new Promise<ScopeChoice | null>((resolve) => {
+    const quickPick = vscode.window.createQuickPick<{
+      label: string;
+      description?: string;
+      value: ScopeChoice;
+    }>();
+
+    const activeOnlyButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon("check"),
+      tooltip: "Active only",
+      location: vscode.QuickInputButtonLocation.Inline,
+      toggle: { checked: false },
+    };
+
+    const inactiveOnlyButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon("circle-slash"),
+      tooltip: "Inactive only",
+      location: vscode.QuickInputButtonLocation.Inline,
+      toggle: { checked: false },
+    };
+
+    quickPick.title = "Delegation grant filters";
+    quickPick.placeholder = "Pick a scope, then press Enter";
+    quickPick.items = [
+      { label: "Any scope", value: undefined },
+      { label: "Session", description: "Current session", value: "session" },
+      { label: "Workspace", description: "Current workspace", value: "workspace" },
+      { label: "Agent", description: "Agent-scoped grants", value: "agent" },
+    ];
+    quickPick.buttons = [activeOnlyButton, inactiveOnlyButton];
+
+    let resolved = false;
+
+    quickPick.onDidTriggerButton((button) => {
+      if (button === activeOnlyButton && activeOnlyButton.toggle?.checked) {
+        if (inactiveOnlyButton.toggle) {
+          inactiveOnlyButton.toggle.checked = false;
+        }
+      }
+
+      if (button === inactiveOnlyButton && inactiveOnlyButton.toggle?.checked) {
+        if (activeOnlyButton.toggle) {
+          activeOnlyButton.toggle.checked = false;
+        }
+      }
+
+      quickPick.buttons = [activeOnlyButton, inactiveOnlyButton];
+    });
+
+    quickPick.onDidAccept(() => {
+      resolved = true;
+      const selected = quickPick.selectedItems[0];
+      quickPick.hide();
+      resolve(selected?.value ?? undefined);
+    });
+
+    quickPick.onDidHide(() => {
+      if (!resolved) {
+        resolve(null);
+      }
+      quickPick.dispose();
+    });
+
+    quickPick.show();
+  });
+
+  if (scope === null) return null;
+
+  const active = await new Promise<boolean | undefined | null>((resolve) => {
+    const quickPick = vscode.window.createQuickPick<{
+      label: string;
+      value: boolean | undefined;
+    }>();
+
+    quickPick.title = "Delegation grant active-state filter";
+    quickPick.placeholder = "Pick active-state filter";
+    quickPick.items = [
       { label: "All", value: undefined },
       { label: "Active only", value: true },
       { label: "Inactive only", value: false },
-    ],
-    { title: "Filter by active state" },
-  );
-  if (!activeChoice) return null;
+    ];
 
-  const scopeChoice = await vscode.window.showQuickPick(
-    [
-      { label: "Any scope", value: undefined },
-      { label: "Session", value: "session" as const },
-      { label: "Workspace", value: "workspace" as const },
-      { label: "Agent", value: "agent" as const },
-    ],
-    { title: "Filter by scope" },
-  );
-  if (!scopeChoice) return null;
+    let resolved = false;
+
+    quickPick.onDidAccept(() => {
+      resolved = true;
+      const selected = quickPick.selectedItems[0];
+      quickPick.hide();
+      resolve(selected?.value ?? undefined);
+    });
+
+    quickPick.onDidHide(() => {
+      if (!resolved) {
+        resolve(null);
+      }
+      quickPick.dispose();
+    });
+
+    quickPick.show();
+  });
+
+  if (active === null) return null;
 
   return {
-    active: activeChoice.value,
-    scope: scopeChoice.value,
-    sessionId: scopeChoice.value === "session" ? vscode.env.sessionId : undefined,
-    workspaceRef: scopeChoice.value === "workspace" ? getWorkspaceRef() : undefined,
+    active,
+    scope,
+    sessionId: scope === "session" ? vscode.env.sessionId : undefined,
+    workspaceRef: scope === "workspace" ? getWorkspaceRef() : undefined,
   };
 }
 
@@ -903,6 +1050,288 @@ async function cancelAvailabilityOverrideCompat(
   }
 
   return override;
+}
+
+type AgentBootstrapTemplate = {
+  label: string;
+  targetPath: string;
+  templatePath: string;
+  appendWhenExists?: boolean;
+};
+
+const AGENT_BOOTSTRAP_TEMPLATES: AgentBootstrapTemplate[] = [
+  {
+    label: "Cursor rule (.cursor/rules/headsdown.mdc)",
+    targetPath: ".cursor/rules/headsdown.mdc",
+    templatePath: "templates/cursor/headsdown.mdc",
+  },
+  {
+    label: "Claude guidance (.claude/HEADSDOWN.md)",
+    targetPath: ".claude/HEADSDOWN.md",
+    templatePath: "templates/claude/HEADSDOWN.md",
+  },
+  {
+    label: "Copilot instructions (.github/copilot-instructions.md)",
+    targetPath: ".github/copilot-instructions.md",
+    templatePath: "templates/copilot/copilot-instructions.md",
+    appendWhenExists: true,
+  },
+  {
+    label: "Hooks sample (.vscode/headsdown-hooks.sample.json)",
+    targetPath: ".vscode/headsdown-hooks.sample.json",
+    templatePath: "templates/hooks/headsdown-hooks.sample.json",
+  },
+];
+
+const PROMPT_RESOURCE_TEMPLATES: AgentBootstrapTemplate[] = [
+  {
+    label: "Status snapshot prompt (.github/prompts/headsdown-status.prompt.md)",
+    targetPath: ".github/prompts/headsdown-status.prompt.md",
+    templatePath: "templates/prompts/headsdown-status.prompt.md",
+  },
+  {
+    label: "Proposal prompt (.github/prompts/headsdown-propose.prompt.md)",
+    targetPath: ".github/prompts/headsdown-propose.prompt.md",
+    templatePath: "templates/prompts/headsdown-propose.prompt.md",
+  },
+];
+
+async function bootstrapAgentFiles(): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showWarningMessage(
+      "HeadsDown: open a workspace folder before bootstrapping files.",
+    );
+    return;
+  }
+
+  if (!extensionContext) {
+    vscode.window.showErrorMessage("HeadsDown: extension context unavailable.");
+    return;
+  }
+
+  const choices = await vscode.window.showQuickPick(
+    AGENT_BOOTSTRAP_TEMPLATES.map((template) => ({ label: template.label, template })),
+    {
+      title: "HeadsDown bootstrap",
+      placeHolder: "Select files to scaffold",
+      canPickMany: true,
+    },
+  );
+
+  if (!choices || choices.length === 0) return;
+
+  const created: string[] = [];
+  const skipped: string[] = [];
+
+  for (const choice of choices) {
+    const template = choice.template;
+    const templatePath = join(extensionContext.extensionPath, template.templatePath);
+    const targetPath = join(folder.uri.fsPath, template.targetPath);
+
+    try {
+      const templateContent = await readFile(templatePath, "utf-8");
+      await mkdir(dirname(targetPath), { recursive: true });
+
+      if (await fileExists(targetPath)) {
+        if (!template.appendWhenExists) {
+          skipped.push(template.targetPath);
+          continue;
+        }
+
+        const existing = await readFile(targetPath, "utf-8");
+        if (existing.includes("HeadsDown policy") || existing.includes("HeadsDown Integration")) {
+          skipped.push(template.targetPath);
+          continue;
+        }
+
+        const merged = `${existing.trimEnd()}\n\n${templateContent.trim()}\n`;
+        await writeFile(targetPath, merged, "utf-8");
+        created.push(`${template.targetPath} (appended)`);
+        continue;
+      }
+
+      await writeFile(targetPath, templateContent, "utf-8");
+      created.push(template.targetPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.log(`Bootstrap failed for ${template.targetPath}: ${message}`);
+      vscode.window.showErrorMessage(
+        `HeadsDown bootstrap failed for ${template.targetPath}: ${message}`,
+      );
+    }
+  }
+
+  const summary = `HeadsDown bootstrap: ${created.length} created, ${skipped.length} skipped.`;
+  logger.log(summary);
+  vscode.window.showInformationMessage(summary);
+  updateControlCenter();
+}
+
+async function generatePromptResources(): Promise<void> {
+  if (!settingsManager.get("experimentalEnablePromptResources")) {
+    const selection = await vscode.window.showInformationMessage(
+      "HeadsDown prompt resources are experimental. Enable headsdown.experimental.enablePromptResources to continue.",
+      "Open Settings",
+    );
+    if (selection === "Open Settings") {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "headsdown.experimental.enablePromptResources",
+      );
+    }
+    return;
+  }
+
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showWarningMessage(
+      "HeadsDown: open a workspace folder before generating prompt resources.",
+    );
+    return;
+  }
+
+  if (!extensionContext) {
+    vscode.window.showErrorMessage("HeadsDown: extension context unavailable.");
+    return;
+  }
+
+  for (const template of PROMPT_RESOURCE_TEMPLATES) {
+    const templatePath = join(extensionContext.extensionPath, template.templatePath);
+    const targetPath = join(folder.uri.fsPath, template.targetPath);
+
+    const templateContent = await readFile(templatePath, "utf-8");
+    await mkdir(dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, templateContent, "utf-8");
+  }
+
+  vscode.window.showInformationMessage("HeadsDown: prompt resources generated in .github/prompts.");
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function copyStatusSnapshot(): Promise<void> {
+  const snapshot = statusBar.getStatusSnapshot();
+  await vscode.env.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+  vscode.window.showInformationMessage("HeadsDown: copied status snapshot to clipboard.");
+}
+
+async function openControlCenter(): Promise<void> {
+  if (controlCenterPanel) {
+    controlCenterPanel.reveal(vscode.ViewColumn.One);
+    updateControlCenter();
+    return;
+  }
+
+  controlCenterPanel = vscode.window.createWebviewPanel(
+    "headsdown.controlCenter",
+    "HeadsDown Control Center",
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    },
+  );
+  controlCenterPanel.iconPath = new vscode.ThemeIcon("shield");
+
+  controlCenterPanel.onDidDispose(() => {
+    controlCenterPanel = null;
+  });
+
+  controlCenterPanel.webview.onDidReceiveMessage((message: { action?: string }) => {
+    if (message.action === "refresh") {
+      void refreshAuthenticatedState();
+      return;
+    }
+    if (message.action === "quick-actions") {
+      void vscode.commands.executeCommand("headsdown.quickAction");
+      return;
+    }
+    if (message.action === "manage-override") {
+      void vscode.commands.executeCommand("headsdown.manageAvailabilityOverride");
+      return;
+    }
+    if (message.action === "manage-grants") {
+      void vscode.commands.executeCommand("headsdown.manageDelegationGrants");
+      return;
+    }
+    if (message.action === "copy-snapshot") {
+      void vscode.commands.executeCommand("headsdown.copyStatusSnapshot");
+    }
+  });
+
+  renderControlCenter();
+}
+
+function updateControlCenter(): void {
+  if (!controlCenterPanel) return;
+  const snapshot = statusBar.getStatusSnapshot();
+  void controlCenterPanel.webview.postMessage({
+    type: "snapshot",
+    snapshot,
+    profile: authManager.getProfile(),
+  });
+}
+
+function renderControlCenter(): void {
+  if (!controlCenterPanel) return;
+
+  const nonce = Math.random().toString(36).slice(2);
+  const snapshot = statusBar.getStatusSnapshot();
+  const profile = authManager.getProfile();
+  const snapshotJson = JSON.stringify({ snapshot, profile }, null, 2);
+
+  controlCenterPanel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${controlCenterPanel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HeadsDown Control Center</title>
+  <style>
+    body { font-family: var(--vscode-font-family); padding: 16px; color: var(--vscode-foreground); }
+    .buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+    button { padding: 8px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 6px; cursor: pointer; }
+    pre { background: var(--vscode-editor-background); border: 1px solid var(--vscode-editorWidget-border); border-radius: 6px; padding: 12px; overflow: auto; max-height: 60vh; }
+  </style>
+</head>
+<body>
+  <h2>HeadsDown Control Center</h2>
+  <div class="buttons">
+    <button data-action="refresh">Refresh</button>
+    <button data-action="quick-actions">Quick Actions</button>
+    <button data-action="manage-override">Manage Override</button>
+    <button data-action="manage-grants">Manage Grants</button>
+    <button data-action="copy-snapshot">Copy Snapshot</button>
+  </div>
+  <pre id="snapshot"></pre>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const initial = ${JSON.stringify(snapshotJson)};
+    const snapshotEl = document.getElementById('snapshot');
+    snapshotEl.textContent = initial;
+
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'snapshot') {
+        snapshotEl.textContent = JSON.stringify({ snapshot: event.data.snapshot, profile: event.data.profile }, null, 2);
+      }
+    });
+
+    for (const button of document.querySelectorAll('button[data-action]')) {
+      button.addEventListener('click', () => {
+        vscode.postMessage({ action: button.getAttribute('data-action') });
+      });
+    }
+  </script>
+</body>
+</html>`;
 }
 
 export const __internal = {

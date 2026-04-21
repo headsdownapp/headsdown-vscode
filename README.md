@@ -82,6 +82,7 @@ All settings are available in VS Code's Settings UI under "HeadsDown":
 | `headsdown.autoDetect.enabled` | `true` | Detect sustained coding and offer to set status |
 | `headsdown.autoDetect.thresholdMinutes` | `20` | Minutes of coding before prompting |
 | `headsdown.api.baseUrl` | `https://headsdown.app` | API base URL (for self-hosted or dev) |
+| `headsdown.experimental.enablePromptResources` | `false` | Enable experimental prompt resource scaffolding commands |
 
 Settings also fall back to `~/.config/headsdown/config.json` when VS Code settings are at their defaults. This shared config file is used by the HeadsDown CLI and SDK, so settings stay consistent across tools.
 
@@ -95,6 +96,10 @@ Settings also fall back to `~/.config/headsdown/config.json` when VS Code settin
 | `HeadsDown: Show Logs` | | Show the output channel |
 | `HeadsDown: Manage Delegation Grants` | | List/create/revoke delegation grants |
 | `HeadsDown: Manage Temporary Override` | | View/set/clear temporary availability override |
+| `HeadsDown: Open Control Center` | | Open a focused status, policy, and actions dashboard |
+| `HeadsDown: Copy Status Snapshot` | | Copy current mode, timing, and wrap-up context as JSON |
+| `HeadsDown: Bootstrap Agent Files` | | Scaffold Cursor, Claude, and Copilot integration files |
+| `HeadsDown: Generate Prompt Resources (Experimental)` | | Generate `.github/prompts` HeadsDown prompt templates |
 
 ## Cursor Integration
 
@@ -124,6 +129,19 @@ cp templates/cursor/headsdown.mdc .cursor/rules/headsdown.mdc
 Rule file source: `templates/cursor/headsdown.mdc`
 
 This template is updated for modern Cursor workflows (Cursor 3 agent workspace + CLI usage), including guidance for proposal verdict handling, wrap-up behavior, optional canvas summaries, and CLI commands like `/debug` and `/btw` when running in terminal mode.
+
+## Agent Workflow Bootstrap
+
+Use `HeadsDown: Bootstrap Agent Files` to scaffold:
+
+- `.cursor/rules/headsdown.mdc`
+- `.claude/HEADSDOWN.md`
+- `.github/copilot-instructions.md`
+- `.vscode/headsdown-hooks.sample.json`
+
+Use `HeadsDown: Copy Status Snapshot` to share a structured JSON snapshot with any agent flow.
+
+For experimental prompt-resource scaffolding, enable `headsdown.experimental.enablePromptResources` and run `HeadsDown: Generate Prompt Resources (Experimental)`.
 
 ## Release Automation (Maintainers)
 

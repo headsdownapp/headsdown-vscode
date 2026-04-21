@@ -29,6 +29,10 @@ export class ThemeColor {
   constructor(public readonly id: string) {}
 }
 
+export class ThemeIcon {
+  constructor(public readonly id: string) {}
+}
+
 // === MarkdownString ===
 
 export class MarkdownString {
@@ -190,9 +194,34 @@ const documentChangeEmitter = new EventEmitter<unknown>();
 export const window = {
   createStatusBarItem: vi.fn(() => new MockStatusBarItem()),
   createOutputChannel: vi.fn((name: string) => new MockOutputChannel(name)),
-  showInformationMessage: vi.fn(),
-  showErrorMessage: vi.fn(),
-  showWarningMessage: vi.fn(),
+  createQuickPick: vi.fn(() => ({
+    title: "",
+    placeholder: "",
+    items: [],
+    buttons: [],
+    selectedItems: [],
+    onDidTriggerButton: vi.fn(),
+    onDidAccept: vi.fn(),
+    onDidHide: vi.fn(),
+    show: vi.fn(),
+    hide: vi.fn(),
+    dispose: vi.fn(),
+  })),
+  createWebviewPanel: vi.fn(() => ({
+    iconPath: undefined,
+    reveal: vi.fn(),
+    onDidDispose: vi.fn(),
+    webview: {
+      html: "",
+      cspSource: "vscode-resource:",
+      postMessage: vi.fn(),
+      onDidReceiveMessage: vi.fn(),
+    },
+    dispose: vi.fn(),
+  })),
+  showInformationMessage: vi.fn(async () => undefined),
+  showErrorMessage: vi.fn(async () => undefined),
+  showWarningMessage: vi.fn(async () => undefined),
   showQuickPick: vi.fn(),
   withProgress: vi.fn(),
 };
@@ -233,6 +262,10 @@ export const commands = {
 export const env = {
   openExternal: vi.fn(),
   sessionId: "mock-session-id",
+  isAppPortable: false,
+  clipboard: {
+    writeText: vi.fn(),
+  },
 };
 
 // === Enums ===
@@ -246,4 +279,16 @@ export const ProgressLocation = {
   SourceControl: 1,
   Window: 10,
   Notification: 15,
+};
+
+export const ViewColumn = {
+  One: 1,
+  Two: 2,
+  Three: 3,
+};
+
+export const QuickInputButtonLocation = {
+  Title: 1,
+  Inline: 2,
+  Input: 3,
 };

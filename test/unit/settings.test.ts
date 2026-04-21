@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Must mock vscode before importing modules that use it
 vi.mock("vscode", () => import("./mocks/vscode.js"));
 
-import { SettingsManager } from "../../src/settings.js";
-import { MockWorkspaceConfiguration, workspace } from "./mocks/vscode.js";
+import { SettingsManager, __internal } from "../../src/settings.js";
+import { MockWorkspaceConfiguration, workspace, env } from "./mocks/vscode.js";
 
 // Mock fs for shared config
 vi.mock("node:fs/promises", () => ({
@@ -31,6 +31,7 @@ describe("SettingsManager", () => {
       "autoDetect.enabled": true,
       "autoDetect.thresholdMinutes": 20,
       "api.baseUrl": "https://headsdown.app",
+      "experimental.enablePromptResources": false,
     });
     workspace._setConfig("headsdown", mockConfig);
 
@@ -107,5 +108,23 @@ describe("SettingsManager", () => {
     const result = await settings.getSettings();
     expect(result.autoDetectEnabled).toBe(false);
     expect(result.autoDetectThresholdMinutes).toBe(30);
+  });
+
+  it("resolves portable shared config path when portable mode is active", () => {
+    process.env.VSCODE_PORTABLE = "/tmp/vscode-portable";
+    (env as any).isAppPortable = true;
+
+    const path = __internal.resolveSharedConfigPath();
+    expect(path).toContain("/tmp/vscode-portable/headsdown/config.json");
+
+    (env as any).isAppPortable = false;
+    delete process.env.VSCODE_PORTABLE;
+  });
+
+  it("loads experimental prompt-resource setting", async () => {
+    mockConfig._setGlobal("experimental.enablePromptResources", true);
+
+    const result = await settings.getSettings();
+    expect(result.experimentalEnablePromptResources).toBe(true);
   });
 });

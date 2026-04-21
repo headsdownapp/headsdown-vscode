@@ -57,6 +57,22 @@
       {
         "command": "headsdown.manageAvailabilityOverride",
         "title": "HeadsDown: Manage Temporary Override"
+      },
+      {
+        "command": "headsdown.bootstrapAgentFiles",
+        "title": "HeadsDown: Bootstrap Agent Files"
+      },
+      {
+        "command": "headsdown.copyStatusSnapshot",
+        "title": "HeadsDown: Copy Status Snapshot"
+      },
+      {
+        "command": "headsdown.openControlCenter",
+        "title": "HeadsDown: Open Control Center"
+      },
+      {
+        "command": "headsdown.generatePromptResources",
+        "title": "HeadsDown: Generate Prompt Resources (Experimental)"
       }
     ],
     "keybindings": [
@@ -137,6 +153,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable calibration reporting. When enabled, HeadsDown learns from your agent's task outcomes to improve verdict accuracy. No code content is collected."
+        },
+        "headsdown.experimental.enablePromptResources": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable experimental prompt resource scaffolding for chat and agent workflows."
         }
       }
     },

@@ -7,7 +7,13 @@ import { StatusBarManager } from "../../src/status-bar.js";
 import { OutputLogger } from "../../src/output.js";
 import { SettingsManager } from "../../src/settings.js";
 import type { Contract, ScheduleResolution } from "@headsdown/sdk";
-import { MockStatusBarItem, ThemeColor, MarkdownString, workspace } from "./mocks/vscode.js";
+import {
+  MockStatusBarItem,
+  ThemeColor,
+  MarkdownString,
+  workspace,
+  window,
+} from "./mocks/vscode.js";
 
 // === Helpers ===
 
@@ -90,6 +96,8 @@ describe("StatusBarManager", () => {
         pollingIntervalSeconds: 300,
         autoDetectEnabled: true,
         autoDetectThresholdMinutes: 20,
+        notificationsEnabled: true,
+        expiryWarningMinutes: 5,
       };
       return defaults[key] as never;
     });
@@ -514,6 +522,39 @@ describe("StatusBarManager", () => {
       const activityMinutes = (manager as unknown as { activityMinutes: number }).activityMinutes;
       // Only counts current and current-1 (streak breaks at 3-minute gap)
       expect(activityMinutes).toBe(2);
+    });
+  });
+
+  describe("expiry warnings", () => {
+    it("shows one warning when a timed focus block reaches warning threshold", () => {
+      const contract = makeContract({
+        mode: "busy",
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      });
+
+      manager.update(contract, makeSchedule());
+      manager.startTimer();
+      vi.advanceTimersByTime(60_000);
+
+      expect(window.showWarningMessage).toHaveBeenCalledTimes(1);
+      expect(window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining("expires in"),
+        "Manage Override",
+      );
+    });
+
+    it("does not repeat warning for the same contract", () => {
+      const contract = makeContract({
+        mode: "limited",
+        expiresAt: new Date(Date.now() + 4 * 60_000).toISOString(),
+      });
+
+      manager.update(contract, makeSchedule());
+      manager.update(contract, makeSchedule());
+      manager.startTimer();
+      vi.advanceTimersByTime(3 * 60_000);
+
+      expect(window.showWarningMessage).toHaveBeenCalledTimes(1);
     });
   });
 });

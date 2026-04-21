@@ -1,0 +1,16 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "run": "echo '[HeadsDown] Session started'"
+    },
+    {
+      "event": "PreToolUse",
+      "run": "echo '[HeadsDown] Tool call pending'"
+    },
+    {
+      "event": "SessionStop",
+      "run": "echo '[HeadsDown] Session stopped'"
+    }
+  ]
+}
