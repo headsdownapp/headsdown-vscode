@@ -10,6 +10,8 @@ Focus mode awareness for VS Code and Cursor. Shows your availability status in t
 - **Real-time subscriptions** with polling fallback to keep your status in sync across tools
 - **Sync transport visibility** in tooltip, so you can see Realtime vs Polling fallback
 - **AI agent awareness** so tools like Cursor, Copilot, and Claude Code can respect your focus time
+- **Delegation grant controls** to list/create/revoke actor-scoped permissions
+- **Temporary override controls** to set/view/clear one-off availability overrides
 
 ## Getting Started
 
@@ -66,6 +68,8 @@ Settings also fall back to `~/.config/headsdown/config.json` when VS Code settin
 | `HeadsDown: Sign Out` | | Clear credentials |
 | `HeadsDown: Quick Actions` | `Cmd+Shift+H` / `Ctrl+Shift+H` | Open the quick action menu |
 | `HeadsDown: Show Logs` | | Show the output channel |
+| `HeadsDown: Manage Delegation Grants` | | List/create/revoke delegation grants |
+| `HeadsDown: Manage Temporary Override` | | View/set/clear temporary availability override |
 
 ## Cursor Integration
 

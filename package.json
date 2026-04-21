@@ -49,6 +49,14 @@
       {
         "command": "headsdown.showOutput",
         "title": "HeadsDown: Show Logs"
+      },
+      {
+        "command": "headsdown.manageDelegationGrants",
+        "title": "HeadsDown: Manage Delegation Grants"
+      },
+      {
+        "command": "headsdown.manageAvailabilityOverride",
+        "title": "HeadsDown: Manage Temporary Override"
       }
     ],
     "keybindings": [
@@ -187,7 +195,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@headsdown/sdk": "^0.1.0"
+    "@headsdown/sdk": "^0.2.11"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

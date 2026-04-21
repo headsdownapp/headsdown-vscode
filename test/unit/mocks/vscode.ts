@@ -202,6 +202,7 @@ export const window = {
 const configMap = new Map<string, MockWorkspaceConfiguration>();
 
 export const workspace = {
+  workspaceFolders: [{ uri: { fsPath: "/mock/workspace" } }],
   getConfiguration: vi.fn((section?: string) => {
     const key = section ?? "";
     if (!configMap.has(key)) {
@@ -231,6 +232,7 @@ export const commands = {
 
 export const env = {
   openExternal: vi.fn(),
+  sessionId: "mock-session-id",
 };
 
 // === Enums ===
