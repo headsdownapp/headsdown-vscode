@@ -2,7 +2,7 @@
   "name": "headsdown-vscode",
   "displayName": "HeadsDown",
   "description": "Focus mode awareness for VS Code. Shows your availability status, protects deep work, and gives AI agents awareness of your focus mode.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "headsdown",
   "license": "MIT",
   "engines": {
