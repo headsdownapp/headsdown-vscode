@@ -1096,6 +1096,45 @@ const PROMPT_RESOURCE_TEMPLATES: AgentBootstrapTemplate[] = [
   },
 ];
 
+type BootstrapAction = "create" | "append" | "skip";
+
+type BootstrapPlanItem = {
+  template: AgentBootstrapTemplate;
+  templateContent: string;
+  targetPath: string;
+  action: BootstrapAction;
+  existingContent?: string;
+  reason?: string;
+};
+
+function detectHeadsDownManagedContent(content: string): boolean {
+  return (
+    content.includes("HeadsDown policy") ||
+    content.includes("HeadsDown Integration") ||
+    content.includes("headsdown_status")
+  );
+}
+
+function decideBootstrapAction(input: {
+  appendWhenExists?: boolean;
+  targetExists: boolean;
+  existingContent?: string;
+}): { action: BootstrapAction; reason?: string } {
+  if (!input.targetExists) {
+    return { action: "create" };
+  }
+
+  if (!input.appendWhenExists) {
+    return { action: "skip", reason: "file already exists" };
+  }
+
+  if (input.existingContent && detectHeadsDownManagedContent(input.existingContent)) {
+    return { action: "skip", reason: "HeadsDown content already present" };
+  }
+
+  return { action: "append" };
+}
+
 async function bootstrapAgentFiles(): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) {
@@ -1121,8 +1160,7 @@ async function bootstrapAgentFiles(): Promise<void> {
 
   if (!choices || choices.length === 0) return;
 
-  const created: string[] = [];
-  const skipped: string[] = [];
+  const plan: BootstrapPlanItem[] = [];
 
   for (const choice of choices) {
     const template = choice.template;
@@ -1131,33 +1169,82 @@ async function bootstrapAgentFiles(): Promise<void> {
 
     try {
       const templateContent = await readFile(templatePath, "utf-8");
-      await mkdir(dirname(targetPath), { recursive: true });
+      const targetExists = await fileExists(targetPath);
+      const existingContent = targetExists ? await readFile(targetPath, "utf-8") : undefined;
+      const decision = decideBootstrapAction({
+        appendWhenExists: template.appendWhenExists,
+        targetExists,
+        existingContent,
+      });
 
-      if (await fileExists(targetPath)) {
-        if (!template.appendWhenExists) {
-          skipped.push(template.targetPath);
-          continue;
-        }
+      plan.push({
+        template,
+        templateContent,
+        targetPath,
+        existingContent,
+        action: decision.action,
+        reason: decision.reason,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.log(`Bootstrap planning failed for ${template.targetPath}: ${message}`);
+      vscode.window.showErrorMessage(
+        `HeadsDown bootstrap failed for ${template.targetPath}: ${message}`,
+      );
+      return;
+    }
+  }
 
-        const existing = await readFile(targetPath, "utf-8");
-        if (existing.includes("HeadsDown policy") || existing.includes("HeadsDown Integration")) {
-          skipped.push(template.targetPath);
-          continue;
-        }
+  const createCount = plan.filter((item) => item.action === "create").length;
+  const appendCount = plan.filter((item) => item.action === "append").length;
+  const skipCount = plan.filter((item) => item.action === "skip").length;
 
-        const merged = `${existing.trimEnd()}\n\n${templateContent.trim()}\n`;
-        await writeFile(targetPath, merged, "utf-8");
-        created.push(`${template.targetPath} (appended)`);
+  const confirmation = await vscode.window.showInformationMessage(
+    `HeadsDown bootstrap preview: ${createCount} create, ${appendCount} append, ${skipCount} skip.`,
+    "Apply",
+    "Dry Run",
+  );
+
+  if (!confirmation) return;
+
+  if (confirmation === "Dry Run") {
+    for (const item of plan) {
+      logger.log(
+        `Bootstrap dry run: ${item.action.toUpperCase()} ${item.template.targetPath}${item.reason ? ` (${item.reason})` : ""}`,
+      );
+    }
+    vscode.window.showInformationMessage(
+      "HeadsDown bootstrap dry run complete. See logs for details.",
+    );
+    return;
+  }
+
+  const created: string[] = [];
+  const skipped: string[] = [];
+
+  for (const item of plan) {
+    try {
+      if (item.action === "skip") {
+        skipped.push(item.template.targetPath);
         continue;
       }
 
-      await writeFile(targetPath, templateContent, "utf-8");
-      created.push(template.targetPath);
+      await mkdir(dirname(item.targetPath), { recursive: true });
+
+      if (item.action === "append") {
+        const merged = `${(item.existingContent ?? "").trimEnd()}\n\n${item.templateContent.trim()}\n`;
+        await writeFile(item.targetPath, merged, "utf-8");
+        created.push(`${item.template.targetPath} (appended)`);
+        continue;
+      }
+
+      await writeFile(item.targetPath, item.templateContent, "utf-8");
+      created.push(item.template.targetPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.log(`Bootstrap failed for ${template.targetPath}: ${message}`);
+      logger.log(`Bootstrap failed for ${item.template.targetPath}: ${message}`);
       vscode.window.showErrorMessage(
-        `HeadsDown bootstrap failed for ${template.targetPath}: ${message}`,
+        `HeadsDown bootstrap failed for ${item.template.targetPath}: ${message}`,
       );
     }
   }
@@ -1343,6 +1430,8 @@ export const __internal = {
   cancelAvailabilityOverrideCompat,
   formatGrantDescription,
   mapDelegationGrantErrorMessage,
+  decideBootstrapAction,
+  detectHeadsDownManagedContent,
 };
 
 // === Activity-Based Sign-In Nudge ===

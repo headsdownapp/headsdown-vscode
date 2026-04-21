@@ -33,6 +33,47 @@ describe("extension actor context helpers", () => {
   });
 });
 
+describe("bootstrap planning", () => {
+  it("creates missing files", () => {
+    const result = __internal.decideBootstrapAction({
+      appendWhenExists: false,
+      targetExists: false,
+    });
+
+    expect(result).toEqual({ action: "create" });
+  });
+
+  it("skips existing non-append targets", () => {
+    const result = __internal.decideBootstrapAction({
+      appendWhenExists: false,
+      targetExists: true,
+      existingContent: "existing",
+    });
+
+    expect(result.action).toBe("skip");
+  });
+
+  it("skips append targets when HeadsDown content already exists", () => {
+    const result = __internal.decideBootstrapAction({
+      appendWhenExists: true,
+      targetExists: true,
+      existingContent: "## HeadsDown Integration\n",
+    });
+
+    expect(result).toEqual({ action: "skip", reason: "HeadsDown content already present" });
+  });
+
+  it("appends when file exists and no HeadsDown content is present", () => {
+    const result = __internal.decideBootstrapAction({
+      appendWhenExists: true,
+      targetExists: true,
+      existingContent: "# Team instructions",
+    });
+
+    expect(result).toEqual({ action: "append" });
+  });
+});
+
 describe("delegation grant error messaging", () => {
   it("maps session-token-only grant errors to explicit capability guidance", () => {
     const mapped = __internal.mapDelegationGrantErrorMessage(

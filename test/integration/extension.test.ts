@@ -37,11 +37,32 @@ suite("Extension Integration", () => {
       commands.includes("headsdown.manageAvailabilityOverride"),
       "manageAvailabilityOverride command should be registered",
     );
+    assert.ok(
+      commands.includes("headsdown.openControlCenter"),
+      "openControlCenter command should be registered",
+    );
+    assert.ok(
+      commands.includes("headsdown.copyStatusSnapshot"),
+      "copyStatusSnapshot command should be registered",
+    );
+    assert.ok(
+      commands.includes("headsdown.bootstrapAgentFiles"),
+      "bootstrapAgentFiles command should be registered",
+    );
   });
 
   test("showOutput command opens output channel", async () => {
     await vscode.commands.executeCommand("headsdown.showOutput");
-    // If we get here without throwing, the command executed successfully
+    assert.ok(true);
+  });
+
+  test("control center command executes without errors", async () => {
+    await vscode.commands.executeCommand("headsdown.openControlCenter");
+    assert.ok(true);
+  });
+
+  test("copy status snapshot command executes without errors", async () => {
+    await vscode.commands.executeCommand("headsdown.copyStatusSnapshot");
     assert.ok(true);
   });
 
