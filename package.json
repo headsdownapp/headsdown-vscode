@@ -209,7 +209,7 @@
     "watch": "node esbuild.js --watch",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:integration": "vscode-test",
+    "test:integration": "npx @vscode/test-cli",
     "lint": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
     "format": "prettier --write 'src/**/*.ts' 'test/**/*.ts'",
     "package": "npx @vscode/vsce package --no-dependencies",
