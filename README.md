@@ -20,6 +20,31 @@ Focus mode awareness for VS Code and Cursor. Shows your availability status in t
 3. Start coding, and the extension tracks your session locally
 4. When you're ready, click the status bar item and sign in to sync your availability across all your tools
 
+## Install from GitHub
+
+### Option 1: Install a release `.vsix` from GitHub
+
+1. Open the [GitHub Releases page](https://github.com/headsdownapp/headsdown-vscode/releases)
+2. Download the latest `.vsix` asset
+3. In VS Code or Cursor, open the Extensions view, click the `...` menu, and select **Install from VSIX...**
+4. Pick the downloaded `.vsix` file
+
+CLI alternative:
+
+```bash
+code --install-extension headsdown-vscode-<version>.vsix
+```
+
+### Option 2: Build and install from source
+
+```bash
+git clone https://github.com/headsdownapp/headsdown-vscode.git
+cd headsdown-vscode
+npm install
+npm run package
+code --install-extension headsdown-vscode-*.vsix
+```
+
 ## Status Bar States
 
 ### Authenticated
@@ -73,37 +98,49 @@ Settings also fall back to `~/.config/headsdown/config.json` when VS Code settin
 
 ## Cursor Integration
 
-If you use [Cursor](https://cursor.sh), add this rule file so the AI agent checks your availability before starting work:
+If you use [Cursor](https://cursor.sh), add this rule file so the AI agent checks your availability before starting work.
 
-Create `.cursor/rules/headsdown.mdc`:
+Automated setup (macOS/Linux):
 
-```markdown
----
-description: Check user availability before starting work via HeadsDown
-globs:
-alwaysApply: true
----
-
-Before starting any multi-file change or task that takes more than a few minutes:
-
-1. If you have access to the `headsdown_status` tool, call it first
-2. If `headsdown_propose` is available, submit a proposal for non-trivial work and follow the verdict
-3. If no HeadsDown tools are available, check the status bar indicator
-
-Mode behavior:
-- **online**: Proceed normally.
-- **busy** (focused): Deep focus. Prefer small, focused changes. Ask before large refactors.
-- **limited** (away): Reduce scope. One file at a time.
-- **offline**: User is away. Only make changes if explicitly asked.
-
-Wrap-Up behavior (cold-start instructions for any model):
-- If `wrapUpGuidance.active` is true and `selectedMode` is `wrap_up`, apply this execution policy: keep scope minimal, avoid starting new refactors, finish the current slice cleanly, and include clear handoff notes for deferred work.
-- If `wrapUpGuidance.active` is true and `selectedMode` is `full_depth`, apply this execution policy: proceed with full implementation depth, include robust validation and tests, and do not shrink scope only because a deadline is near.
-- If `selectedMode` is `auto`, follow the provided context to balance scope and depth, stay focused on the requested outcome, and avoid unnecessary expansion.
-- When present, include `remainingMinutes`, `reason`, and `hints` in your planning and execution choices.
-
-If status shows locked, do not attempt to work around it.
+```bash
+mkdir -p .cursor/rules
+curl -fsSL https://raw.githubusercontent.com/headsdownapp/headsdown-vscode/main/templates/cursor/headsdown.mdc -o .cursor/rules/headsdown.mdc
 ```
+
+Automated setup (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force .cursor/rules | Out-Null
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/headsdownapp/headsdown-vscode/main/templates/cursor/headsdown.mdc" -OutFile ".cursor/rules/headsdown.mdc"
+```
+
+If you cloned this repo locally, you can also copy the file directly:
+
+```bash
+mkdir -p .cursor/rules
+cp templates/cursor/headsdown.mdc .cursor/rules/headsdown.mdc
+```
+
+Rule file source: `templates/cursor/headsdown.mdc`
+
+## Release Automation (Maintainers)
+
+This repo uses [Release Please](https://github.com/googleapis/release-please) to automate releases.
+
+- Merges to `main` create or update a release PR with version bumps and changelog entries
+- Merging the release PR creates the Git tag and GitHub release
+- Publishing then runs automatically and:
+  - builds, tests, and lints
+  - packages a `.vsix`
+  - uploads the `.vsix` to the GitHub release
+  - publishes to VS Marketplace and Open VSX
+
+Required repository secrets:
+
+- `VSCE_PAT`: Visual Studio Marketplace Personal Access Token
+- `OVSX_PAT`: Open VSX Personal Access Token
+
+Tip: use conventional commit prefixes (`feat:`, `fix:`, `chore:`) so release notes and semantic versioning stay clean.
 
 ## Development
 
