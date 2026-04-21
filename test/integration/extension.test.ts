@@ -29,6 +29,14 @@ suite("Extension Integration", () => {
       "quickAction command should be registered",
     );
     assert.ok(commands.includes("headsdown.showOutput"), "showOutput command should be registered");
+    assert.ok(
+      commands.includes("headsdown.manageDelegationGrants"),
+      "manageDelegationGrants command should be registered",
+    );
+    assert.ok(
+      commands.includes("headsdown.manageAvailabilityOverride"),
+      "manageAvailabilityOverride command should be registered",
+    );
   });
 
   test("showOutput command opens output channel", async () => {
