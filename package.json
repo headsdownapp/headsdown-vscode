@@ -195,7 +195,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@headsdown/sdk": "^0.2.12"
+    "@headsdown/sdk": "^0.2.13"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
