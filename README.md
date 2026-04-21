@@ -123,6 +123,8 @@ cp templates/cursor/headsdown.mdc .cursor/rules/headsdown.mdc
 
 Rule file source: `templates/cursor/headsdown.mdc`
 
+This template is updated for modern Cursor workflows (Cursor 3 agent workspace + CLI usage), including guidance for proposal verdict handling, wrap-up behavior, optional canvas summaries, and CLI commands like `/debug` and `/btw` when running in terminal mode.
+
 ## Release Automation (Maintainers)
 
 This repo uses [Release Please](https://github.com/googleapis/release-please) to automate releases.

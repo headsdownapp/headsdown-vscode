@@ -1,31 +1,42 @@
 ---
-description: HeadsDown policy for Cursor agents (availability-first execution)
+description: HeadsDown policy for Cursor agents (Cursor 3 + CLI aware)
 globs:
   - "**/*"
 alwaysApply: true
 ---
 
-Use HeadsDown tools when available to respect user availability before and during work.
+Use HeadsDown tools when available so the agent adapts scope to the user's current availability.
 
-Core flow:
+Execution contract:
 1. At task start, call `headsdown_status` before any non-trivial work.
-2. For non-trivial work (multi-file, >10 minutes, refactor, or risky change), call `headsdown_propose` with scope and estimate.
-3. Follow proposal verdict strictly:
+2. For non-trivial work (multi-file, more than 10 minutes, refactor, risky migration, or large test changes), call `headsdown_propose` with scope and estimate.
+3. Follow the proposal verdict exactly:
    - `APPROVED`: proceed with the approved scope.
-   - `DEFERRED`: pause, reduce scope to a smaller safe slice, or ask the user when to continue.
-4. If the task was started with an approved proposal, call `headsdown_report` at the end with the outcome.
+   - `DEFERRED`: stop or shrink to a safe, user-confirmed slice.
+4. If work started from an approved proposal, call `headsdown_report` when done (or failed).
 
 Mode behavior:
 - `online`: proceed normally.
-- `busy`: deep focus, keep edits tightly scoped, avoid broad refactors unless explicitly requested.
+- `busy`: deep focus, keep edits tight, avoid broad refactors unless explicitly requested.
 - `limited`: reduce scope, prefer one-file or one-slice changes.
-- `offline`: do not start non-urgent work unless explicitly asked.
+- `offline`: do not start non-urgent work unless explicitly requested.
 
 Wrap-Up behavior:
-- If `wrapUpGuidance.active` is true and `selectedMode` is `wrap_up`: keep scope minimal, avoid starting new refactors, finish the current slice cleanly, provide clear handoff notes.
-- If `wrapUpGuidance.active` is true and `selectedMode` is `full_depth`: proceed with full implementation depth, include robust validation, do not reduce quality because of time pressure.
+- If `wrapUpGuidance.active` is true and `selectedMode` is `wrap_up`: keep scope minimal, avoid starting new refactors, finish the current slice cleanly, and provide handoff notes.
+- If `wrapUpGuidance.active` is true and `selectedMode` is `full_depth`: proceed with full implementation depth, include robust validation, and do not reduce quality due to time pressure.
 - If `selectedMode` is `auto`: follow provided context to balance scope and depth while staying focused on the requested outcome.
-- Use `remainingMinutes`, `reason`, and `hints` when they are present.
+- Use `remainingMinutes`, `reason`, and `hints` when present.
+
+Cursor 3 agent workspace guidance:
+- Prefer small, checkpointed slices so local and cloud agent runs are easy to verify.
+- When agent output is complex (large diffs, architecture choices, test matrices), present a concise summary first and optionally a canvas for visual review.
+- Treat canvases as review artifacts, not as a substitute for code changes, tests, or command output.
+
+Cursor CLI guidance (when operating in CLI mode):
+- Use `/debug` for hard-to-reproduce issues before wide speculative changes.
+- Use `/btw` for short side clarifications without derailing the main task.
+- Use `/config` only for local runtime behavior, not to bypass project policy.
+- Use `/statusline` to surface task/mode signals only when the user asks for persistent status customization.
 
 Tool-specific guidance:
 - Use `headsdown_presets` or `headsdown_override` only when the user explicitly asks to change availability.
@@ -33,4 +44,4 @@ Tool-specific guidance:
 - If status is locked, do not attempt to bypass protections.
 
 Fallback behavior:
-- If HeadsDown tools are unavailable in the current environment, check the HeadsDown VS Code/Cursor status indicator and ask for confirmation before large changes.
+- If HeadsDown tools are unavailable, check the HeadsDown status indicator in VS Code/Cursor and ask for confirmation before large changes.
