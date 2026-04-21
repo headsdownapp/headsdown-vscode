@@ -277,7 +277,7 @@ describe("StatusBarManager", () => {
 
       const tooltip = getStatusBarItem(manager).tooltip as MarkdownString;
       expect(tooltip.value).toContain("Wrap-Up: 20m remaining (wrap_up)");
-      expect(tooltip.value).toContain("Execution policy for this task");
+      expect(tooltip.value).toContain("Execution policy:");
     });
 
     it("shows sync state labels in tooltip", () => {

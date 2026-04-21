@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import type { Contract, HeadsDownClient, Mode, ScheduleResolution } from "@headsdown/sdk";
+import * as HeadsDownSDK from "@headsdown/sdk";
+import type { Contract, HeadsDownClient, Mode, ScheduleResolution, Verdict } from "@headsdown/sdk";
 import type { OutputLogger } from "./output.js";
 import type { SettingsManager } from "./settings.js";
 
@@ -334,7 +335,10 @@ export class StatusBarManager {
         const timing = typeof minutes === "number" ? `${minutes}m remaining` : "active";
         lines.push(`\uD83E\uDDFE Wrap-Up: ${timing} (${schedule.wrapUpGuidance.selectedMode})`);
 
-        const instruction = this.buildWrapUpInstruction(schedule.wrapUpGuidance);
+        const instruction = this.resolveExecutionInstruction({
+          contract,
+          schedule,
+        });
         if (instruction) {
           lines.push(`\uD83E\uDDE0 ${instruction}`);
         }
@@ -433,18 +437,30 @@ export class StatusBarManager {
     return this.hasScheduleChanged(oldSchedule, newSchedule);
   }
 
-  private buildWrapUpInstruction(
-    guidance:
-      | {
-          active?: boolean;
-          selectedMode?: "auto" | "wrap_up" | "full_depth";
-          remainingMinutes?: number | null;
-          reason?: string;
-          hints?: string[];
-        }
-      | null
-      | undefined,
-  ): string | null {
+  private resolveExecutionInstruction(input: {
+    contract?: Contract | null;
+    schedule?: ScheduleResolution | null;
+    verdict?: Pick<Verdict, "decision" | "reason" | "wrapUpGuidance"> | null;
+  }): string | null {
+    const describeExecutionDirective = (
+      HeadsDownSDK as unknown as {
+        describeExecutionDirective?: (value: {
+          contract?: Contract | null;
+          schedule?: ScheduleResolution | null;
+          verdict?: Pick<Verdict, "decision" | "reason" | "wrapUpGuidance"> | null;
+        }) => { primaryDirective?: string };
+      }
+    ).describeExecutionDirective;
+
+    if (typeof describeExecutionDirective === "function") {
+      const directive = describeExecutionDirective(input);
+      return directive.primaryDirective ?? null;
+    }
+
+    const guidance = input.verdict?.wrapUpGuidance ?? input.schedule?.wrapUpGuidance;
+    if (!guidance || !guidance.active) {
+      return null;
+    }
     if (!guidance || !guidance.active) {
       return null;
     }
