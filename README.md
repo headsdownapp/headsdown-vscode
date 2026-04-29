@@ -162,6 +162,10 @@ Required repository secrets:
 
 Tip: use conventional commit prefixes (`feat:`, `fix:`, `chore:`) so release notes and semantic versioning stay clean.
 
+## Dependency update automation
+
+This repo uses Renovate to keep `@headsdown/sdk` and other routine dependencies current. New SDK releases open bot PRs automatically, and eligible updates can automerge after required CI checks pass. In normal maintenance flow, do not manually edit `@headsdown/sdk` versions unless you are intentionally overriding Renovate behavior.
+
 ## Development
 
 ```bash
