@@ -205,8 +205,8 @@
     ]
   },
   "scripts": {
-    "build": "node esbuild.js",
-    "watch": "node esbuild.js --watch",
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode",
+    "watch": "esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode --watch",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:integration": "npx @vscode/test-cli",
@@ -215,10 +215,8 @@
     "package": "npx @vscode/vsce package --no-dependencies",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@headsdown/sdk": "^0.2.13"
-  },
   "devDependencies": {
+    "@headsdown/sdk": "^0.2.13",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.110.0",
     "@vscode/test-electron": "^2.5.2",
