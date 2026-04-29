@@ -143,6 +143,19 @@ Use `HeadsDown: Copy Status Snapshot` to share a structured JSON snapshot with a
 
 For experimental prompt-resource scaffolding, enable `headsdown.experimental.enablePromptResources` and run `HeadsDown: Generate Prompt Resources (Experimental)`.
 
+## Bundling and Runtime Dependencies
+
+The extension is bundled into a single CommonJS file at `dist/extension.js` using esbuild.
+
+- `vscode` stays external because the VS Code extension host provides it at runtime.
+- `@headsdown/sdk` is a build-time dependency and is inlined into the bundle, so the published extension does not need it installed as a separate runtime package.
+
+Build command:
+
+```bash
+esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode
+```
+
 ## Release Automation (Maintainers)
 
 This repo uses [Release Please](https://github.com/googleapis/release-please) to automate releases.
